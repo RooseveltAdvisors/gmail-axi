@@ -199,7 +199,7 @@ export class GmailClient implements GmailOperations {
     if (listed.messages !== undefined && !Array.isArray(listed.messages)) {
       throw new GmailError("invalid_response", "Google returned an invalid message list");
     }
-    if (listed.resultSizeEstimate !== undefined && (!Number.isInteger(listed.resultSizeEstimate) || listed.resultSizeEstimate < 0)) {
+    if (listed.resultSizeEstimate !== undefined && (typeof listed.resultSizeEstimate !== "number" || !Number.isInteger(listed.resultSizeEstimate) || listed.resultSizeEstimate < 0)) {
       throw new GmailError("invalid_response", "Google returned an invalid message count");
     }
     if (listed.messages === undefined && listed.resultSizeEstimate !== 0) {
@@ -237,14 +237,15 @@ export class GmailClient implements GmailOperations {
     if (typeof thread.id !== "string" || !thread.id || !Array.isArray(thread.messages)) {
       throw new GmailError("invalid_response", "Google returned an invalid thread");
     }
+    const threadId = thread.id;
     const messages = (thread.messages as unknown[]).map((message) => {
       if (!isRecord(message) || typeof message.id !== "string" || !message.id) throw new GmailError("invalid_response", "Google returned a thread message without an id");
-      return messageResponse(message, thread.id, full);
+      return messageResponse(message, threadId, full);
     });
     const mapped = messages.map((message) => (full ? detail(message, true) : summary(message, false)));
     const participants = [...new Set(messages.map((message) => header(message, "From")).filter(Boolean))];
     return {
-      thread_id: thread.id,
+      thread_id: threadId,
       message_count: mapped.length,
       subject: header(messages[0] || {}, "Subject"),
       participants,
