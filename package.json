@@ -1,0 +1,26 @@
+{
+  "name": "gmail-axi",
+  "version": "0.0.0",
+  "private": false,
+  "type": "module",
+  "description": "AXI-standard multi-account Gmail CLI for agents (https://axi.md)",
+  "license": "MIT",
+  "bin": {
+    "gmail-axi": "./bin/gmail-axi"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RooseveltAdvisors/gmail-axi.git"
+  },
+  "homepage": "https://github.com/RooseveltAdvisors/gmail-axi#readme",
+  "bugs": {
+    "url": "https://github.com/RooseveltAdvisors/gmail-axi/issues"
+  },
+  "keywords": [
+    "gmail",
+    "cli",
+    "agent",
+    "axi",
+    "toon"
+  ]
+}

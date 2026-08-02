@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+accounts.toml
+**/accounts.local.toml
+*token*
+*Token*
+credentials*
+.credentials*
+.gmail*
+*.pem
+.DS_Store
+.no-mistakes/
+coverage/

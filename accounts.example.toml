@@ -1,0 +1,14 @@
+# Copy to ~/.config/gmail-axi/accounts.toml and fill in.
+# Never commit a real accounts.toml.
+
+[accounts.work]
+email = "you@example.com"
+client_id_env = "GMAIL_AXI_WORK_CLIENT_ID"
+client_secret_env = "GMAIL_AXI_WORK_CLIENT_SECRET"
+refresh_token_env = "GMAIL_AXI_WORK_REFRESH_TOKEN"
+
+[accounts.personal]
+email = "you2@example.com"
+client_id_env = "GMAIL_AXI_PERSONAL_CLIENT_ID"
+client_secret_env = "GMAIL_AXI_PERSONAL_CLIENT_SECRET"
+refresh_token_env = "GMAIL_AXI_PERSONAL_REFRESH_TOKEN"
