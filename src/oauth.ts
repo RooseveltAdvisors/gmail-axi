@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { authMaterial, ConfigError, saveRefreshToken } from "./config.js";
+import { clientCredentials, saveRefreshToken } from "./config.js";
 import type { Account, ConfigState } from "./types.js";
 import type { FetchLike } from "./gmail.js";
 
@@ -18,13 +18,7 @@ export async function authorizeAccount(
   env: NodeJS.ProcessEnv = process.env,
   fetcher: FetchLike = fetch,
 ): Promise<{ account: string; status: "authorized"; storage: "user-local" }> {
-  const material = await authMaterial(config, { ...account, refreshTokenEnv: undefined }, env).catch(async (error) => {
-    if (!(error instanceof ConfigError) || error.code !== "not_authorized") throw error;
-    const clientId = env[account.clientIdEnv];
-    const clientSecret = env[account.clientSecretEnv];
-    if (!clientId || !clientSecret) throw error;
-    return { clientId, clientSecret };
-  });
+  const material = clientCredentials(account, env);
   const state = randomBytes(16).toString("hex");
   const server = createServer();
   const code = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {

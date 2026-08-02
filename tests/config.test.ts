@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountHasCredentials, ConfigError, configPath, parseAccountsToml, validateAccountId } from "../src/config.js";
+import { accountHasCredentials, clientCredentials, ConfigError, configPath, parseAccountsToml, validateAccountId } from "../src/config.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -27,5 +27,6 @@ describe("account configuration", () => {
     expect(() => configPath({ GMAIL_AXI_CONFIG: "/tmp/accounts.toml" })).toThrow(ConfigError);
     const config = { path: join(homedir(), ".config/gmail-axi/accounts.toml"), exists: true, accounts: [{ key: "work", email: "you@example.com", clientIdEnv: "ID", clientSecretEnv: "SECRET", accessTokenEnv: "ACCESS" }] };
     await expect(accountHasCredentials(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "access" })).resolves.toBe(true);
+    expect(clientCredentials(config.accounts[0], { ID: "id", SECRET: "secret" })).toEqual({ clientId: "id", clientSecret: "secret" });
   });
 });

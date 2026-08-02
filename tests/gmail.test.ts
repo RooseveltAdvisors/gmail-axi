@@ -66,6 +66,12 @@ describe("Gmail client", () => {
 
     const partialThreadClient = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, async () => new Response(JSON.stringify({ id: "thread-1" }), { status: 200 }));
     await expect(partialThreadClient.getThread("thread-1", false)).rejects.toMatchObject({ code: "invalid_response" });
+
+    const partialListClient = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, async () => new Response(JSON.stringify({ resultSizeEstimate: 1 }), { status: 200 }));
+    await expect(partialListClient.search({ limit: 1 })).rejects.toMatchObject({ code: "invalid_response" });
+
+    const emptyListClient = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, async () => new Response(JSON.stringify({ resultSizeEstimate: 0 }), { status: 200 }));
+    await expect(emptyListClient.search({ limit: 1 })).resolves.toMatchObject({ count: 0, returned: 0, messages: [] });
   });
 
   it("creates drafts through the drafts endpoint", async () => {

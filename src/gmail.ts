@@ -111,12 +111,18 @@ async function jsonResponse(response: Response, operation: string): Promise<Reco
   return value;
 }
 
-function messageResponse(value: Record<string, unknown>, fallbackThreadId?: string): GmailMessage {
+function messageResponse(value: Record<string, unknown>, fallbackThreadId?: string, requireContent = false): GmailMessage {
   if (typeof value.id !== "string" || !value.id) {
     throw new GmailError("invalid_response", "Google returned a message without an id");
   }
   const threadId = typeof value.threadId === "string" && value.threadId ? value.threadId : fallbackThreadId;
   if (!threadId) throw new GmailError("invalid_response", "Google returned a message without a thread id");
+  const payload = isRecord(value.payload) ? value.payload : undefined;
+  const headers = payload?.headers;
+  const validHeaders = Array.isArray(headers) && headers.every((item) => isRecord(item) && (item.name === undefined || typeof item.name === "string") && (item.value === undefined || typeof item.value === "string"));
+  if (!Array.isArray(value.labelIds) || !value.labelIds.every((item) => typeof item === "string") || !payload || !validHeaders || (requireContent && typeof value.snippet !== "string")) {
+    throw new GmailError("invalid_response", "Google returned an incomplete message");
+  }
   return typeof value.threadId === "string" && value.threadId ? value as GmailMessage : { ...value, threadId } as GmailMessage;
 }
 
@@ -193,10 +199,16 @@ export class GmailClient implements GmailOperations {
     if (listed.messages !== undefined && !Array.isArray(listed.messages)) {
       throw new GmailError("invalid_response", "Google returned an invalid message list");
     }
-    if (listed.messages === undefined && typeof listed.resultSizeEstimate !== "number") {
+    if (listed.resultSizeEstimate !== undefined && (!Number.isInteger(listed.resultSizeEstimate) || listed.resultSizeEstimate < 0)) {
+      throw new GmailError("invalid_response", "Google returned an invalid message count");
+    }
+    if (listed.messages === undefined && listed.resultSizeEstimate !== 0) {
       throw new GmailError("invalid_response", "Google returned an invalid message list");
     }
     const ids = (listed.messages || []) as unknown[];
+    if (!ids.length && typeof listed.resultSizeEstimate === "number" && listed.resultSizeEstimate > 0) {
+      throw new GmailError("invalid_response", "Google returned a message count without messages");
+    }
     const messages = await Promise.all(ids.map((item) => {
       if (!isRecord(item) || typeof item.id !== "string" || !item.id) throw new GmailError("invalid_response", "Google returned a message without an id");
       const threadId = typeof item.threadId === "string" && item.threadId ? item.threadId : undefined;
@@ -214,7 +226,7 @@ export class GmailClient implements GmailOperations {
 
   async getMessage(id: string, full: boolean): Promise<MessageDetail> {
     const params = new URLSearchParams({ format: "full" });
-    const message = messageResponse(await this.request(`/messages/${encodeURIComponent(id)}?${params}`));
+    const message = messageResponse(await this.request(`/messages/${encodeURIComponent(id)}?${params}`), undefined, true);
     return detail(message, full);
   }
 
@@ -227,7 +239,7 @@ export class GmailClient implements GmailOperations {
     }
     const messages = (thread.messages as unknown[]).map((message) => {
       if (!isRecord(message) || typeof message.id !== "string" || !message.id) throw new GmailError("invalid_response", "Google returned a thread message without an id");
-      return messageResponse(message, thread.id);
+      return messageResponse(message, thread.id, full);
     });
     const mapped = messages.map((message) => (full ? detail(message, true) : summary(message, false)));
     const participants = [...new Set(messages.map((message) => header(message, "From")).filter(Boolean))];
