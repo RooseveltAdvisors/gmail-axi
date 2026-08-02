@@ -1,0 +1,124 @@
+import { createServer } from "node:http";
+import { randomBytes } from "node:crypto";
+import { spawn } from "node:child_process";
+import { clientCredentials, saveRefreshToken } from "./config.js";
+import type { Account, ConfigState } from "./types.js";
+import type { FetchLike } from "./gmail.js";
+
+const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
+const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+const SCOPE = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.compose",
+].join(" ");
+
+export async function authorizeAccount(
+  config: ConfigState,
+  account: Account,
+  env: NodeJS.ProcessEnv = process.env,
+  fetcher: FetchLike = fetch,
+): Promise<{ account: string; status: "authorized"; storage: "user-local" }> {
+  const material = clientCredentials(account, env);
+  const state = randomBytes(16).toString("hex");
+  const server = createServer();
+  const code = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const closeServer = () => {
+      if (server.listening) server.close();
+    };
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      closeServer();
+      reject(error);
+    };
+    const succeed = (value: { code: string; redirectUri: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      closeServer();
+      resolve(value);
+    };
+    timer = setTimeout(() => fail(new Error("OAuth authorization timed out")), 5 * 60 * 1000);
+    server.on("request", (request, response) => {
+      if (settled) return;
+      const url = new URL(request.url || "/", "http://127.0.0.1");
+      if (url.pathname !== "/oauth2callback") {
+        response.writeHead(404).end();
+        return;
+      }
+      if (url.searchParams.get("state") !== state) {
+        response.writeHead(400).end("Authorization state mismatch");
+        fail(new Error("OAuth authorization state mismatch"));
+        return;
+      }
+      const authorizationCode = url.searchParams.get("code");
+      if (!authorizationCode) {
+        response.writeHead(400).end("Authorization was denied");
+        fail(new Error("OAuth authorization was denied"));
+        return;
+      }
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      response.writeHead(200, { "content-type": "text/plain; charset=utf-8" }).end("Authorization complete. You can close this window.\n");
+      succeed({ code: authorizationCode, redirectUri: `http://127.0.0.1:${port}/oauth2callback` });
+    });
+    server.once("error", (error) => fail(new Error(error.message || "Unable to start the OAuth callback server")));
+    server.listen(0, "127.0.0.1", () => {
+      if (settled) return;
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
+      const authorizationUrl = new URL(AUTH_ENDPOINT);
+      authorizationUrl.search = new URLSearchParams({
+        client_id: material.clientId,
+        redirect_uri: redirectUri,
+        response_type: "code",
+        access_type: "offline",
+        prompt: "consent",
+        scope: SCOPE,
+        state,
+      }).toString();
+      void openBrowser(authorizationUrl.toString()).catch((error) => fail(error instanceof Error ? error : new Error("Unable to open the authorization browser")));
+    });
+  });
+
+  const response = await fetcher(TOKEN_ENDPOINT, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code: code.code,
+      client_id: material.clientId,
+      client_secret: material.clientSecret,
+      redirect_uri: code.redirectUri,
+      grant_type: "authorization_code",
+    }),
+  });
+  if (!response.ok) throw new Error("Google authorization token exchange failed");
+  const tokens = (await response.json()) as { refresh_token?: unknown };
+  if (typeof tokens.refresh_token !== "string") throw new Error("Google authorization returned no refresh token");
+  await saveRefreshToken(config, account, tokens.refresh_token);
+  return { account: account.key, status: "authorized", storage: "user-local" };
+}
+
+function openBrowser(url: string): Promise<void> {
+  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawn(command, [url], { detached: true, stdio: "ignore", shell: process.platform === "win32" });
+    } catch {
+      reject(new Error("Unable to open the authorization browser"));
+      return;
+    }
+    const failed = () => reject(new Error("Unable to open the authorization browser"));
+    child.once("error", failed);
+    child.once("close", (code, signal) => {
+      if (code === 0 && !signal) resolve();
+      else reject(new Error("Unable to open the authorization browser"));
+    });
+    child.unref();
+  });
+}

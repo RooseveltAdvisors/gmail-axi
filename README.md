@@ -18,6 +18,8 @@ Accounts are **not** hard-coded. Operators configure mailboxes locally. Secrets 
 - Do not commit `.env`, token caches, or real account config
 - Use `accounts.example.toml` as a template only
 - Default posture is read + draft (no send in v0.1)
+- Desktop OAuth requests only `gmail.readonly` and `gmail.compose`; the CLI never exposes a send operation.
+- `GMAIL_AXI_CONFIG` and OAuth token caches must remain under the user home directory.
 
 ## Install
 
@@ -26,7 +28,7 @@ Accounts are **not** hard-coded. Operators configure mailboxes locally. Secrets 
 npx skills add RooseveltAdvisors/gmail-axi --skill gmail-axi -g
 
 # or CLI
-npm install -g gmail-axi
+bun add -g gmail-axi
 # or
 npx -y gmail-axi
 ```
@@ -34,8 +36,8 @@ npx -y gmail-axi
 ## Configure
 
 ```sh
-mkdir -p ~/.config/gmail-axi
-cp accounts.example.toml ~/.config/gmail-axi/accounts.toml
+gmail-axi doctor
+# If config is missing, run the package-resolved copy command shown in help.
 # edit accounts.toml — set emails and secret env var names
 ```
 

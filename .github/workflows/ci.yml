@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun run test
+      - run: test -z "$(rg -n -i '(authorization: bearer|refresh_token\s*=\s*[^\s<]|client_secret\s*=\s*[^\s<])' --glob '!bun.lock' --glob '!README.md' --glob '!accounts.example.toml' . || true)"
