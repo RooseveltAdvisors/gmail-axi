@@ -150,8 +150,8 @@ export async function accountHasCredentials(
   account: Account,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
-  const refreshToken = await refreshTokenFor(config, account, env);
   const accessToken = account.accessTokenEnv ? env[account.accessTokenEnv] : undefined;
+  const refreshToken = accessToken ? undefined : await refreshTokenFor(config, account, env);
   return Boolean(env[account.clientIdEnv] && env[account.clientSecretEnv] && (refreshToken || accessToken));
 }
 
@@ -184,8 +184,8 @@ export async function authMaterial(
   account: Account,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ clientId: string; clientSecret: string; refreshToken?: string; accessToken?: string }> {
-  const refreshToken = await refreshTokenFor(config, account, env);
   const accessToken = account.accessTokenEnv ? env[account.accessTokenEnv] : undefined;
+  const refreshToken = accessToken ? undefined : await refreshTokenFor(config, account, env);
   const clientId = env[account.clientIdEnv];
   const clientSecret = env[account.clientSecretEnv];
   if (!clientId || !clientSecret || (!refreshToken && !accessToken)) {

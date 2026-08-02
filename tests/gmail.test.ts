@@ -37,7 +37,8 @@ describe("Gmail client", () => {
     const client = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, fetcher);
     const result = await client.search({ from: "you@example.com", since: "2026-01-02", newerThanDays: 7, limit: 10 });
     expect(result.query).toBe("from:you@example.com after:2026/01/02 newer_than:7d");
-    expect(result.messages[0]).toMatchObject({ id: "message-1", subject: "Hello", has_attachments: false });
+    expect(result.messages[0]).toMatchObject({ id: "message-1", subject: "Hello" });
+    expect(result.messages[0]).not.toHaveProperty("has_attachments");
     const detail = await client.getMessage("message-1", false);
     expect(detail.body).toContain("body");
     expect(detail.body_size).toBeGreaterThan(0);
@@ -52,7 +53,7 @@ describe("Gmail client", () => {
       return new Response("not json", { status: 200 });
     };
     const client = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, fetcher);
-    await expect(client.getThread("thread-1", false)).resolves.toMatchObject({ thread_id: "thread-1", message_count: 1 });
+    await expect(client.getThread("thread-1", false)).resolves.toMatchObject({ thread_id: "thread-1", message_count: 1, messages: [{ id: "message-1" }] });
     expect(requests[0]).toContain("format=metadata");
     await expect(client.search({ limit: 1 })).rejects.toMatchObject({ code: "invalid_response" });
   });

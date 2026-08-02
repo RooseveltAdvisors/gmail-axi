@@ -10,11 +10,13 @@ describe("TOON output", () => {
 
   it("quotes actionable strings and preserves multiline content", () => {
     expect(toon({ help: ["Run `gmail-axi doctor`"], body: "first\nsecond" })).toBe(
-      'help[1]:\n  "Run `gmail-axi doctor`"\nbody: "first\\nsecond"\n',
+      'help[1]: "Run `gmail-axi doctor`"\nbody: "first\\nsecond"\n',
     );
   });
 
-  it("preserves nested values instead of flattening them into table columns", () => {
-    expect(toon({ messages: [{ id: "a", labels: ["INBOX", "IMPORTANT"] }] })).toContain('"labels":["INBOX","IMPORTANT"]');
+  it("uses canonical list rows for nested values", () => {
+    expect(toon({ messages: [{ id: "a", labels: ["INBOX", "IMPORTANT"] }] })).toBe(
+      "messages[1]:\n  - id: a\n    labels[2]: INBOX,IMPORTANT\n",
+    );
   });
 });

@@ -28,11 +28,28 @@ export async function authorizeAccount(
   const state = randomBytes(16).toString("hex");
   const server = createServer();
   const code = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      server.close();
-      reject(new Error("OAuth authorization timed out"));
-    }, 5 * 60 * 1000);
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const closeServer = () => {
+      if (server.listening) server.close();
+    };
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      closeServer();
+      reject(error);
+    };
+    const succeed = (value: { code: string; redirectUri: string }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      closeServer();
+      resolve(value);
+    };
+    timer = setTimeout(() => fail(new Error("OAuth authorization timed out")), 5 * 60 * 1000);
     server.on("request", (request, response) => {
+      if (settled) return;
       const url = new URL(request.url || "/", "http://127.0.0.1");
       if (url.pathname !== "/oauth2callback") {
         response.writeHead(404).end();
@@ -40,28 +57,23 @@ export async function authorizeAccount(
       }
       if (url.searchParams.get("state") !== state) {
         response.writeHead(400).end("Authorization state mismatch");
-        clearTimeout(timer);
-        server.close();
-        reject(new Error("OAuth authorization state mismatch"));
+        fail(new Error("OAuth authorization state mismatch"));
         return;
       }
       const authorizationCode = url.searchParams.get("code");
       if (!authorizationCode) {
         response.writeHead(400).end("Authorization was denied");
-        clearTimeout(timer);
-        server.close();
-        reject(new Error("OAuth authorization was denied"));
+        fail(new Error("OAuth authorization was denied"));
         return;
       }
       const address = server.address();
       const port = typeof address === "object" && address ? address.port : 0;
       response.writeHead(200, { "content-type": "text/plain; charset=utf-8" }).end("Authorization complete. You can close this window.\n");
-      clearTimeout(timer);
-      server.close();
-      resolve({ code: authorizationCode, redirectUri: `http://127.0.0.1:${port}/oauth2callback` });
+      succeed({ code: authorizationCode, redirectUri: `http://127.0.0.1:${port}/oauth2callback` });
     });
-    server.once("error", reject);
+    server.once("error", (error) => fail(new Error(error.message || "Unable to start the OAuth callback server")));
     server.listen(0, "127.0.0.1", () => {
+      if (settled) return;
       const address = server.address();
       const port = typeof address === "object" && address ? address.port : 0;
       const redirectUri = `http://127.0.0.1:${port}/oauth2callback`;
@@ -75,11 +87,7 @@ export async function authorizeAccount(
         scope: SCOPE,
         state,
       }).toString();
-      void openBrowser(authorizationUrl.toString()).catch((error) => {
-        clearTimeout(timer);
-        server.close();
-        reject(error instanceof Error ? error : new Error("Unable to open the authorization browser"));
-      });
+      void openBrowser(authorizationUrl.toString()).catch((error) => fail(error instanceof Error ? error : new Error("Unable to open the authorization browser")));
     });
   });
 
@@ -113,10 +121,10 @@ function openBrowser(url: string): Promise<void> {
     }
     const failed = () => reject(new Error("Unable to open the authorization browser"));
     child.once("error", failed);
-    child.once("spawn", () => {
-      child.off("error", failed);
-      child.unref();
-      resolve();
+    child.once("close", (code, signal) => {
+      if (code === 0 && !signal) resolve();
+      else reject(new Error("Unable to open the authorization browser"));
     });
+    child.unref();
   });
 }

@@ -70,22 +70,25 @@ function preview(value: string, full: boolean): { body: string; body_size: numbe
   };
 }
 
-function summary(message: GmailMessage): MessageSummary {
-  return {
+function summary(message: GmailMessage, includeContentFields: boolean): MessageSummary {
+  const result: MessageSummary = {
     id: message.id || "",
     thread_id: message.threadId || "",
     subject: header(message, "Subject"),
     from: header(message, "From"),
     date: header(message, "Date"),
-    snippet: message.snippet || "",
-    has_attachments: hasAttachments(message),
   };
+  if (includeContentFields) {
+    result.snippet = message.snippet || "";
+    result.has_attachments = hasAttachments(message);
+  }
+  return result;
 }
 
 function detail(message: GmailMessage, full: boolean): MessageDetail {
   const content = preview(messageBody(message), full);
   return {
-    ...summary(message),
+    ...summary(message, true),
     to: header(message, "To"),
     labels: message.labelIds || [],
     body: content.body,
@@ -191,7 +194,7 @@ export class GmailClient implements GmailOperations {
       return this.message(item.id);
     }));
     const estimate = typeof listed.resultSizeEstimate === "number" ? listed.resultSizeEstimate : messages.length;
-    return { count: estimate, returned: messages.length, query, messages: messages.map(summary) };
+    return { count: estimate, returned: messages.length, query, messages: messages.map((message) => summary(message, false)) };
   }
 
   private async message(id: string): Promise<GmailMessage> {
@@ -217,7 +220,7 @@ export class GmailClient implements GmailOperations {
       if (!isRecord(message) || typeof message.id !== "string" || !message.id) throw new GmailError("invalid_response", "Google returned a thread message without an id");
       return message as GmailMessage;
     });
-    const mapped = messages.map((message) => (full ? detail(message, true) : summary(message)));
+    const mapped = messages.map((message) => (full ? detail(message, true) : summary(message, false)));
     const participants = [...new Set(messages.map((message) => header(message, "From")).filter(Boolean))];
     return {
       thread_id: (thread.id as string) || id,
