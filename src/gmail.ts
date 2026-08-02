@@ -10,12 +10,14 @@ export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Res
 export class GmailError extends Error {
   readonly code: string;
   readonly status?: number;
+  readonly help?: string[];
 
-  constructor(code: string, message: string, status?: number) {
+  constructor(code: string, message: string, status?: number, help?: string[]) {
     super(message);
     this.name = "GmailError";
     this.code = code;
     this.status = status;
+    this.help = help;
   }
 }
 
@@ -73,11 +75,11 @@ function preview(value: string, full: boolean): { body: string; body_size: numbe
 function summary(message: GmailMessage, includeContentFields: boolean): MessageSummary {
   const result: MessageSummary = {
     id: message.id || "",
-    thread_id: message.threadId || "",
     subject: header(message, "Subject"),
     from: header(message, "From"),
     date: header(message, "Date"),
   };
+  if (message.threadId) result.thread_id = message.threadId;
   if (includeContentFields) {
     result.snippet = message.snippet || "";
     result.has_attachments = hasAttachments(message);
@@ -109,11 +111,13 @@ async function jsonResponse(response: Response, operation: string): Promise<Reco
   return value;
 }
 
-function messageResponse(value: Record<string, unknown>): GmailMessage {
+function messageResponse(value: Record<string, unknown>, fallbackThreadId?: string): GmailMessage {
   if (typeof value.id !== "string" || !value.id) {
     throw new GmailError("invalid_response", "Google returned a message without an id");
   }
-  return value as GmailMessage;
+  const threadId = typeof value.threadId === "string" && value.threadId ? value.threadId : fallbackThreadId;
+  if (!threadId) throw new GmailError("invalid_response", "Google returned a message without a thread id");
+  return typeof value.threadId === "string" && value.threadId ? value as GmailMessage : { ...value, threadId } as GmailMessage;
 }
 
 export function normalizeSince(value: string): string {
@@ -155,11 +159,15 @@ export class GmailClient implements GmailOperations {
         grant_type: "refresh_token",
       }),
     });
-    if (!response.ok) throw new GmailError("auth_failed", "Google authorization failed", response.status);
+    if (!response.ok) throw new GmailError("auth_failed", "Google authorization failed", response.status, this.authorizationHelp());
     const data = await jsonResponse(response, "the authorization response");
-    if (typeof data.access_token !== "string") throw new GmailError("auth_failed", "Google authorization returned no access token");
+    if (typeof data.access_token !== "string") throw new GmailError("auth_failed", "Google authorization returned no access token", undefined, this.authorizationHelp());
     this.accessToken = data.access_token;
     return data.access_token;
+  }
+
+  private authorizationHelp(): string[] {
+    return [`Run \`gmail-axi authorize --account ${this.account.key}\``, "Run `gmail-axi doctor`"];
   }
 
   private async request(path: string, init: RequestInit = {}): Promise<Record<string, unknown>> {
@@ -168,7 +176,7 @@ export class GmailClient implements GmailOperations {
     headers.set("authorization", `Bearer ${token}`);
     const response = await this.fetcher(`${GMAIL_API}${path}`, { ...init, headers });
     if (!response.ok) {
-      if (response.status === 401) throw new GmailError("auth_expired", "Google authorization expired", response.status);
+      if (response.status === 401) throw new GmailError("auth_expired", "Google authorization expired", response.status, this.authorizationHelp());
       if (response.status === 404) throw new GmailError("not_found", "Gmail item was not found", response.status);
       throw new GmailError("gmail_api_error", "Gmail request failed", response.status);
     }
@@ -191,16 +199,17 @@ export class GmailClient implements GmailOperations {
     const ids = (listed.messages || []) as unknown[];
     const messages = await Promise.all(ids.map((item) => {
       if (!isRecord(item) || typeof item.id !== "string" || !item.id) throw new GmailError("invalid_response", "Google returned a message without an id");
-      return this.message(item.id);
+      const threadId = typeof item.threadId === "string" && item.threadId ? item.threadId : undefined;
+      return this.message(item.id, threadId);
     }));
     const estimate = typeof listed.resultSizeEstimate === "number" ? listed.resultSizeEstimate : messages.length;
     return { count: estimate, returned: messages.length, query, messages: messages.map((message) => summary(message, false)) };
   }
 
-  private async message(id: string): Promise<GmailMessage> {
+  private async message(id: string, threadId?: string): Promise<GmailMessage> {
     const params = new URLSearchParams({ format: "metadata" });
     for (const field of ["Subject", "From", "Date"]) params.append("metadataHeaders", field);
-    return messageResponse(await this.request(`/messages/${encodeURIComponent(id)}?${params}`));
+    return messageResponse(await this.request(`/messages/${encodeURIComponent(id)}?${params}`), threadId);
   }
 
   async getMessage(id: string, full: boolean): Promise<MessageDetail> {
@@ -213,17 +222,17 @@ export class GmailClient implements GmailOperations {
     const params = new URLSearchParams({ format: full ? "full" : "metadata" });
     if (!full) for (const field of ["Subject", "From", "Date"]) params.append("metadataHeaders", field);
     const thread = await this.request(`/threads/${encodeURIComponent(id)}?${params}`);
-    if (typeof thread.id !== "string" || !thread.id || (thread.messages !== undefined && !Array.isArray(thread.messages))) {
+    if (typeof thread.id !== "string" || !thread.id || !Array.isArray(thread.messages)) {
       throw new GmailError("invalid_response", "Google returned an invalid thread");
     }
-    const messages = ((thread.messages || []) as unknown[]).map((message) => {
+    const messages = (thread.messages as unknown[]).map((message) => {
       if (!isRecord(message) || typeof message.id !== "string" || !message.id) throw new GmailError("invalid_response", "Google returned a thread message without an id");
-      return message as GmailMessage;
+      return messageResponse(message, thread.id);
     });
     const mapped = messages.map((message) => (full ? detail(message, true) : summary(message, false)));
     const participants = [...new Set(messages.map((message) => header(message, "From")).filter(Boolean))];
     return {
-      thread_id: (thread.id as string) || id,
+      thread_id: thread.id,
       message_count: mapped.length,
       subject: header(messages[0] || {}, "Subject"),
       participants,

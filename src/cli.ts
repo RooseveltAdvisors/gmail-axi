@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { homedir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { accountViews, ConfigError, displayPath, findAccount, loadConfig } from "./config.js";
 import { GmailClient, GmailError } from "./gmail.js";
 import { authorizeAccount } from "./oauth.js";
@@ -8,6 +9,7 @@ import { toon } from "./toon.js";
 import type { ConfigState, GmailOperations } from "./types.js";
 
 const DESCRIPTION = "Read and draft mail across local Gmail accounts; sending is disabled.";
+const EXAMPLE_CONFIG = resolve(dirname(fileURLToPath(import.meta.url)), "../accounts.example.toml");
 
 export class CliError extends Error {
   constructor(
@@ -142,11 +144,12 @@ function globalHelp(): Record<string, unknown> {
   };
 }
 
-function accountHelp(command: string, account: string): string[] {
+function accountHelp(command: string, account: string, messageId?: string): string[] {
   const prefix = `gmail-axi ${command} --account ${account}`;
-  return command === "search"
-    ? [hint(`${prefix} --query "newer_than:7d"`), hint(`gmail-axi get --account ${account} <message-id>`)]
-    : [hint(`gmail-axi search --account ${account} --query "in:anywhere"`)];
+  if (command !== "search") return [hint(`gmail-axi search --account ${account} --query "in:anywhere"`)];
+  const next = [hint(`${prefix} --query "newer_than:7d"`)];
+  if (messageId) next.push(hint(`gmail-axi get --account ${account} ${messageId}`));
+  return next;
 }
 
 function hint(command: string): string {
@@ -154,7 +157,11 @@ function hint(command: string): string {
 }
 
 function missingConfigHelp(): string[] {
-  return ["Run `mkdir -p ~/.config/gmail-axi && cp accounts.example.toml ~/.config/gmail-axi/accounts.toml`", "Run `gmail-axi doctor`"];
+  return [`Run \`mkdir -p ~/.config/gmail-axi && cp ${shellPath(EXAMPLE_CONFIG)} ~/.config/gmail-axi/accounts.toml\``, "Run `gmail-axi doctor`"];
+}
+
+function shellPath(path: string): string {
+  return `'${path.replaceAll("'", "'\"'\"'")}'`;
 }
 
 async function home(deps: Dependencies, doctor = false): Promise<Record<string, unknown>> {
@@ -252,7 +259,7 @@ async function dispatch(command: string, args: string[], deps: Dependencies): Pr
       newerThanDays: newerThan,
       limit,
     });
-    return { account, count: result.count, returned: result.returned, query: result.query || "(all mail)", messages: result.messages, help: result.returned ? accountHelp("search", account) : [hint(`gmail-axi search --account ${account} --query "in:anywhere"`)] };
+    return { account, count: result.count, returned: result.returned, query: result.query || "(all mail)", messages: result.messages, help: result.returned ? accountHelp("search", account, result.messages[0]?.id) : [hint(`gmail-axi search --account ${account} --query "in:anywhere"`)] };
   }
   if (command === "get") {
     const output: Record<string, unknown> = { account, message: await client.getMessage(id!, parsed.options.full === true) };
@@ -296,9 +303,9 @@ export async function run(argv: string[], overrides: Partial<Dependencies> = {})
     const normalized = error instanceof CliError
       ? error
       : error instanceof ConfigError
-        ? new CliError(error.code, error.message)
+        ? new CliError(error.code, error.message, 1, { help: error.help })
         : error instanceof GmailError
-          ? new CliError(error.code, error.message)
+          ? new CliError(error.code, error.message, 1, { help: error.help })
           : new CliError("internal_error", "Command failed");
     deps.stderr(normalized.code === "internal_error" ? "[gmail-axi] command failed\n" : "");
     deps.stdout(toon(errorOutput(normalized)));

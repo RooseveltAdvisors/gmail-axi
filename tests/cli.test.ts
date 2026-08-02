@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { run } from "../src/cli.js";
+import { ConfigError } from "../src/config.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ConfigState, GmailOperations } from "../src/types.js";
@@ -31,8 +32,23 @@ describe("CLI contracts", () => {
     });
     expect(code).toBe(0);
     expect(output).toContain("count: 0");
-    expect(output).toContain("messages[0]");
+    expect(output).toContain("messages: []");
     expect(output).toContain("gmail-axi search --account work");
+  });
+
+  it("uses a returned message id in nonempty search help", async () => {
+    let output = "";
+    const client = fakeClient();
+    client.search = async () => ({ count: 1, returned: 1, query: "in:anywhere", messages: [{ id: "message-1", subject: "Subject", from: "you@example.com", date: "" }] });
+    const code = await run(["search", "--account", "work"], {
+      loadConfig: async () => config,
+      createClient: async () => client,
+      env: {},
+      stdout: (text) => { output += text; },
+    });
+    expect(code).toBe(0);
+    expect(output).toContain("gmail-axi get --account work message-1");
+    expect(output).not.toContain("<message-id>");
   });
 
   it("refuses send without invoking a client", async () => {
@@ -75,5 +91,38 @@ describe("CLI contracts", () => {
     });
     expect(code).toBe(0);
     expect(output).toContain("gmail-axi search --account work");
+  });
+
+  it("preserves recovery help on authorization errors", async () => {
+    let output = "";
+    const code = await run(["get", "--account", "work", "message-1"], {
+      loadConfig: async () => config,
+      createClient: async () => {
+        const client = fakeClient();
+        client.getMessage = async () => {
+          throw new ConfigError("Account work is not authorized", "not_authorized", [
+            "Run `gmail-axi authorize --account work`",
+            "Run `gmail-axi doctor`",
+          ]);
+        };
+        return client;
+      },
+      env: {},
+      stdout: (text) => { output += text; },
+    });
+    expect(code).toBe(1);
+    expect(output).toContain("gmail-axi authorize --account work");
+    expect(output).toContain("gmail-axi doctor");
+  });
+
+  it("points missing configuration help to the packaged example", async () => {
+    let output = "";
+    const code = await run(["accounts"], {
+      loadConfig: async () => ({ path: "/home/example/.config/gmail-axi/accounts.toml", exists: false, accounts: [] }),
+      env: {},
+      stdout: (text) => { output += text; },
+    });
+    expect(code).toBe(0);
+    expect(output).toContain("accounts.example.toml");
   });
 });

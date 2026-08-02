@@ -31,13 +31,17 @@ describe("Gmail client", () => {
     const requests: string[] = [];
     const fetcher = async (input: string | URL, init?: RequestInit) => {
       requests.push(String(input));
-      if (String(input).includes("/messages?")) return new Response(JSON.stringify({ resultSizeEstimate: 1, messages: [{ id: "message-1" }] }), { status: 200 });
+      if (String(input).includes("/messages?")) return new Response(JSON.stringify({ resultSizeEstimate: 1, messages: [{ id: "message-1", threadId: "thread-1" }] }), { status: 200 });
+      if (String(input).includes("format=metadata")) {
+        const { threadId: _threadId, ...metadataMessage } = message;
+        return new Response(JSON.stringify(metadataMessage), { status: 200 });
+      }
       return new Response(JSON.stringify(message), { status: 200 });
     };
     const client = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, fetcher);
     const result = await client.search({ from: "you@example.com", since: "2026-01-02", newerThanDays: 7, limit: 10 });
     expect(result.query).toBe("from:you@example.com after:2026/01/02 newer_than:7d");
-    expect(result.messages[0]).toMatchObject({ id: "message-1", subject: "Hello" });
+    expect(result.messages[0]).toMatchObject({ id: "message-1", thread_id: "thread-1", subject: "Hello" });
     expect(result.messages[0]).not.toHaveProperty("has_attachments");
     const detail = await client.getMessage("message-1", false);
     expect(detail.body).toContain("body");
@@ -56,6 +60,12 @@ describe("Gmail client", () => {
     await expect(client.getThread("thread-1", false)).resolves.toMatchObject({ thread_id: "thread-1", message_count: 1, messages: [{ id: "message-1" }] });
     expect(requests[0]).toContain("format=metadata");
     await expect(client.search({ limit: 1 })).rejects.toMatchObject({ code: "invalid_response" });
+
+    const partialMessageClient = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, async () => new Response(JSON.stringify({ id: "message-1" }), { status: 200 }));
+    await expect(partialMessageClient.getMessage("message-1", false)).rejects.toMatchObject({ code: "invalid_response" });
+
+    const partialThreadClient = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, async () => new Response(JSON.stringify({ id: "thread-1" }), { status: 200 }));
+    await expect(partialThreadClient.getThread("thread-1", false)).rejects.toMatchObject({ code: "invalid_response" });
   });
 
   it("creates drafts through the drafts endpoint", async () => {

@@ -22,12 +22,12 @@ export type ConfigState = {
 
 export type MessageSummary = {
   id: string;
-  thread_id: string;
+  thread_id?: string;
   subject: string;
   from: string;
   date: string;
-  snippet: string;
-  has_attachments: boolean;
+  snippet?: string;
+  has_attachments?: boolean;
 };
 
 export type MessageDetail = MessageSummary & {

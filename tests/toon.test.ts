@@ -19,4 +19,10 @@ describe("TOON output", () => {
       "messages[1]:\n  - id: a\n    labels[2]: INBOX,IMPORTANT\n",
     );
   });
+
+  it("quotes string scalars that could change meaning", () => {
+    expect(toon({ values: ["42", "from:sender@example.com", "-draft"] })).toBe(
+      'values[3]: "42","from:sender@example.com","-draft"\n',
+    );
+  });
 });

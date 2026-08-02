@@ -6,7 +6,7 @@ import type { Account, AccountView, ConfigState } from "./types.js";
 export const ACCOUNT_ID = /^[a-zA-Z0-9_:\-]+$/;
 
 export class ConfigError extends Error {
-  constructor(message: string, readonly code = "config_invalid") {
+  constructor(message: string, readonly code = "config_invalid", readonly help?: string[]) {
     super(message);
     this.name = "ConfigError";
   }
@@ -189,7 +189,10 @@ export async function authMaterial(
   const clientId = env[account.clientIdEnv];
   const clientSecret = env[account.clientSecretEnv];
   if (!clientId || !clientSecret || (!refreshToken && !accessToken)) {
-    throw new ConfigError(`Account ${account.key} is not authorized`, "not_authorized");
+    throw new ConfigError(`Account ${account.key} is not authorized`, "not_authorized", [
+      `Run \`gmail-axi authorize --account ${account.key}\``,
+      "Run `gmail-axi doctor`",
+    ]);
   }
   return { clientId, clientSecret, refreshToken, accessToken };
 }

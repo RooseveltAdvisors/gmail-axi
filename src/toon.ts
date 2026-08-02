@@ -7,7 +7,8 @@ function scalar(value: unknown): string {
   if (typeof value === "boolean" || typeof value === "number") return String(value);
   if (Array.isArray(value) || isObject(value)) return JSON.stringify(value) || "null";
   const text = String(value);
-  if (/^[A-Za-z0-9_./:@+~=-]+$/.test(text) && !/^(true|false|null)$/.test(text)) return text;
+  const numericLike = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(text);
+  if (/^[A-Za-z0-9_./@+~=-]+$/.test(text) && !/^(true|false|null)$/.test(text) && !numericLike && !text.startsWith("-")) return text;
   return JSON.stringify(text);
 }
 
