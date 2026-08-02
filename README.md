@@ -18,6 +18,8 @@ Accounts are **not** hard-coded. Operators configure mailboxes locally. Secrets 
 - Do not commit `.env`, token caches, or real account config
 - Use `accounts.example.toml` as a template only
 - Default posture is read + draft (no send in v0.1)
+- Desktop OAuth requests only `gmail.readonly` and `gmail.compose`; the CLI never exposes a send operation.
+- `GMAIL_AXI_CONFIG` and OAuth token caches must remain under the user home directory.
 
 ## Install
 

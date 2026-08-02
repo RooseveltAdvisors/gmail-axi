@@ -1,13 +1,16 @@
 import { createServer } from "node:http";
 import { randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import { authMaterial, saveRefreshToken } from "./config.js";
+import { authMaterial, ConfigError, saveRefreshToken } from "./config.js";
 import type { Account, ConfigState } from "./types.js";
 import type { FetchLike } from "./gmail.js";
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
-const SCOPE = "https://www.googleapis.com/auth/gmail.modify";
+const SCOPE = [
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/gmail.compose",
+].join(" ");
 
 export async function authorizeAccount(
   config: ConfigState,
@@ -16,6 +19,7 @@ export async function authorizeAccount(
   fetcher: FetchLike = fetch,
 ): Promise<{ account: string; status: "authorized"; storage: "user-local" }> {
   const material = await authMaterial(config, { ...account, refreshTokenEnv: undefined }, env).catch(async (error) => {
+    if (!(error instanceof ConfigError) || error.code !== "not_authorized") throw error;
     const clientId = env[account.clientIdEnv];
     const clientSecret = env[account.clientSecretEnv];
     if (!clientId || !clientSecret) throw error;
@@ -71,7 +75,11 @@ export async function authorizeAccount(
         scope: SCOPE,
         state,
       }).toString();
-      openBrowser(authorizationUrl.toString());
+      void openBrowser(authorizationUrl.toString()).catch((error) => {
+        clearTimeout(timer);
+        server.close();
+        reject(error instanceof Error ? error : new Error("Unable to open the authorization browser"));
+      });
     });
   });
 
@@ -93,8 +101,22 @@ export async function authorizeAccount(
   return { account: account.key, status: "authorized", storage: "user-local" };
 }
 
-function openBrowser(url: string): void {
+function openBrowser(url: string): Promise<void> {
   const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-  const child = spawn(command, [url], { detached: true, stdio: "ignore", shell: process.platform === "win32" });
-  child.unref();
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawn(command, [url], { detached: true, stdio: "ignore", shell: process.platform === "win32" });
+    } catch {
+      reject(new Error("Unable to open the authorization browser"));
+      return;
+    }
+    const failed = () => reject(new Error("Unable to open the authorization browser"));
+    child.once("error", failed);
+    child.once("spawn", () => {
+      child.off("error", failed);
+      child.unref();
+      resolve();
+    });
+  });
 }

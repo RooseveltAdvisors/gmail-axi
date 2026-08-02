@@ -29,6 +29,10 @@ type GmailMessage = {
   payload?: GmailPart & { headers?: GmailHeader[] };
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function base64Url(value: string): string {
   return Buffer.from(value).toString("base64").replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
@@ -89,12 +93,36 @@ function detail(message: GmailMessage, full: boolean): MessageDetail {
   };
 }
 
-async function jsonResponse(response: Response): Promise<Record<string, unknown>> {
+async function jsonResponse(response: Response, operation: string): Promise<Record<string, unknown>> {
+  let value: unknown;
   try {
-    return (await response.json()) as Record<string, unknown>;
+    value = await response.json();
   } catch {
-    return {};
+    throw new GmailError("invalid_response", `Google returned invalid JSON for ${operation}`, response.status);
   }
+  if (!isRecord(value) || !Object.keys(value).length) {
+    throw new GmailError("invalid_response", `Google returned an invalid response for ${operation}`, response.status);
+  }
+  return value;
+}
+
+function messageResponse(value: Record<string, unknown>): GmailMessage {
+  if (typeof value.id !== "string" || !value.id) {
+    throw new GmailError("invalid_response", "Google returned a message without an id");
+  }
+  return value as GmailMessage;
+}
+
+export function normalizeSince(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) throw new GmailError("invalid_input", "--since must use YYYY-MM-DD");
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (!daysInMonth || day < 1 || day > daysInMonth) throw new GmailError("invalid_input", "--since must be a valid YYYY-MM-DD date");
+  return `${match[1]}/${match[2]}/${match[3]}`;
 }
 
 export class GmailClient implements GmailOperations {
@@ -125,7 +153,7 @@ export class GmailClient implements GmailOperations {
       }),
     });
     if (!response.ok) throw new GmailError("auth_failed", "Google authorization failed", response.status);
-    const data = await jsonResponse(response);
+    const data = await jsonResponse(response, "the authorization response");
     if (typeof data.access_token !== "string") throw new GmailError("auth_failed", "Google authorization returned no access token");
     this.accessToken = data.access_token;
     return data.access_token;
@@ -141,17 +169,27 @@ export class GmailClient implements GmailOperations {
       if (response.status === 404) throw new GmailError("not_found", "Gmail item was not found", response.status);
       throw new GmailError("gmail_api_error", "Gmail request failed", response.status);
     }
-    return jsonResponse(response);
+    return jsonResponse(response, "the Gmail response");
   }
 
   async search(options: SearchOptions): Promise<{ count: number; returned: number; query: string; messages: MessageSummary[] }> {
-    const clauses = [options.query, options.from && `from:${options.from}`, options.since && `after:${options.since}`, options.newerThanDays && `newer_than:${options.newerThanDays}d`].filter(Boolean);
+    const since = options.since === undefined ? undefined : normalizeSince(options.since);
+    const clauses = [options.query, options.from && `from:${options.from}`, since && `after:${since}`, options.newerThanDays !== undefined && `newer_than:${options.newerThanDays}d`].filter(Boolean);
     const query = clauses.join(" ");
     const params = new URLSearchParams({ maxResults: String(options.limit) });
     if (query) params.set("q", query);
     const listed = await this.request(`/messages?${params}`);
-    const ids = Array.isArray(listed.messages) ? (listed.messages as Array<{ id?: string }>) : [];
-    const messages = await Promise.all(ids.filter((item) => item.id).map((item) => this.message(item.id!)));
+    if (listed.messages !== undefined && !Array.isArray(listed.messages)) {
+      throw new GmailError("invalid_response", "Google returned an invalid message list");
+    }
+    if (listed.messages === undefined && typeof listed.resultSizeEstimate !== "number") {
+      throw new GmailError("invalid_response", "Google returned an invalid message list");
+    }
+    const ids = (listed.messages || []) as unknown[];
+    const messages = await Promise.all(ids.map((item) => {
+      if (!isRecord(item) || typeof item.id !== "string" || !item.id) throw new GmailError("invalid_response", "Google returned a message without an id");
+      return this.message(item.id);
+    }));
     const estimate = typeof listed.resultSizeEstimate === "number" ? listed.resultSizeEstimate : messages.length;
     return { count: estimate, returned: messages.length, query, messages: messages.map(summary) };
   }
@@ -159,19 +197,26 @@ export class GmailClient implements GmailOperations {
   private async message(id: string): Promise<GmailMessage> {
     const params = new URLSearchParams({ format: "metadata" });
     for (const field of ["Subject", "From", "Date"]) params.append("metadataHeaders", field);
-    return (await this.request(`/messages/${encodeURIComponent(id)}?${params}`)) as GmailMessage;
+    return messageResponse(await this.request(`/messages/${encodeURIComponent(id)}?${params}`));
   }
 
   async getMessage(id: string, full: boolean): Promise<MessageDetail> {
     const params = new URLSearchParams({ format: "full" });
-    const message = (await this.request(`/messages/${encodeURIComponent(id)}?${params}`)) as GmailMessage;
+    const message = messageResponse(await this.request(`/messages/${encodeURIComponent(id)}?${params}`));
     return detail(message, full);
   }
 
   async getThread(id: string, full: boolean): Promise<ThreadDetail> {
-    const params = new URLSearchParams({ format: "full" });
+    const params = new URLSearchParams({ format: full ? "full" : "metadata" });
+    if (!full) for (const field of ["Subject", "From", "Date"]) params.append("metadataHeaders", field);
     const thread = await this.request(`/threads/${encodeURIComponent(id)}?${params}`);
-    const messages = Array.isArray(thread.messages) ? (thread.messages as GmailMessage[]) : [];
+    if (typeof thread.id !== "string" || !thread.id || (thread.messages !== undefined && !Array.isArray(thread.messages))) {
+      throw new GmailError("invalid_response", "Google returned an invalid thread");
+    }
+    const messages = ((thread.messages || []) as unknown[]).map((message) => {
+      if (!isRecord(message) || typeof message.id !== "string" || !message.id) throw new GmailError("invalid_response", "Google returned a thread message without an id");
+      return message as GmailMessage;
+    });
     const mapped = messages.map((message) => (full ? detail(message, true) : summary(message)));
     const participants = [...new Set(messages.map((message) => header(message, "From")).filter(Boolean))];
     return {
@@ -191,7 +236,11 @@ export class GmailClient implements GmailOperations {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ message: { raw: base64Url(raw) } }),
     });
-    const draft = (result as { id?: string; message?: { threadId?: string } });
-    return { draft_id: draft.id || "", thread_id: draft.message?.threadId || "", status: "draft" };
+    const draft = result as { id?: unknown; message?: unknown };
+    const message = isRecord(draft.message) ? draft.message : undefined;
+    if (typeof draft.id !== "string" || !draft.id || !message || typeof message.id !== "string" || !message.id || typeof message.threadId !== "string" || !message.threadId) {
+      throw new GmailError("invalid_response", "Google returned a draft without the required ids");
+    }
+    return { draft_id: draft.id, message_id: message.id, thread_id: message.threadId, status: "draft" };
   }
 }

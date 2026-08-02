@@ -1,6 +1,6 @@
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Account, AccountView, ConfigState } from "./types.js";
 
 export const ACCOUNT_ID = /^[a-zA-Z0-9_:\-]+$/;
@@ -18,8 +18,22 @@ export function validateAccountId(key: string): void {
   }
 }
 
+function userLocalPath(value: string): string {
+  const home = resolve(homedir());
+  const candidate = value === "~"
+    ? home
+    : value.startsWith(`~${sep}`) || value.startsWith("~/")
+      ? resolve(home, value.slice(2))
+      : resolve(home, value);
+  const relativePath = relative(home, candidate);
+  if (relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
+    throw new ConfigError("GMAIL_AXI_CONFIG must be inside the user home directory", "config_path_invalid");
+  }
+  return candidate;
+}
+
 export function configPath(env: NodeJS.ProcessEnv = process.env): string {
-  return env.GMAIL_AXI_CONFIG || join(homedir(), ".config", "gmail-axi", "accounts.toml");
+  return env.GMAIL_AXI_CONFIG ? userLocalPath(env.GMAIL_AXI_CONFIG) : join(resolve(homedir()), ".config", "gmail-axi", "accounts.toml");
 }
 
 function parseString(value: string, line: number): string {
@@ -98,17 +112,37 @@ export async function loadConfig(env: NodeJS.ProcessEnv = process.env): Promise<
 
 function tokenPath(config: ConfigState, account: Account): string {
   validateAccountId(account.key);
-  return join(dirname(config.path), "tokens", `${account.key}.json`);
+  return join(dirname(userLocalPath(config.path)), "tokens", `${account.key}.json`);
 }
 
 async function cachedRefreshToken(config: ConfigState, account: Account): Promise<string | undefined> {
+  const path = tokenPath(config, account);
+  let content: string;
   try {
-    const content = await readFile(tokenPath(config, account), "utf8");
-    const parsed = JSON.parse(content) as { refresh_token?: unknown };
-    return typeof parsed.refresh_token === "string" && parsed.refresh_token ? parsed.refresh_token : undefined;
-  } catch {
-    return undefined;
+    content = await readFile(path, "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new ConfigError(`Unable to read the cached OAuth token for account ${account.key}`, "config_cache_error");
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    throw new ConfigError(`The cached OAuth token for account ${account.key} is invalid`, "config_cache_invalid");
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed) || typeof (parsed as { refresh_token?: unknown }).refresh_token !== "string" || !(parsed as { refresh_token: string }).refresh_token) {
+    throw new ConfigError(`The cached OAuth token for account ${account.key} is invalid`, "config_cache_invalid");
+  }
+  return (parsed as { refresh_token: string }).refresh_token;
+}
+
+async function refreshTokenFor(
+  config: ConfigState,
+  account: Account,
+  env: NodeJS.ProcessEnv,
+): Promise<string | undefined> {
+  const configured = account.refreshTokenEnv ? env[account.refreshTokenEnv] : undefined;
+  return configured || await cachedRefreshToken(config, account);
 }
 
 export async function accountHasCredentials(
@@ -116,8 +150,9 @@ export async function accountHasCredentials(
   account: Account,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
-  const refreshToken = (account.refreshTokenEnv && env[account.refreshTokenEnv]) || await cachedRefreshToken(config, account);
-  return Boolean(env[account.clientIdEnv] && env[account.clientSecretEnv] && refreshToken);
+  const refreshToken = await refreshTokenFor(config, account, env);
+  const accessToken = account.accessTokenEnv ? env[account.accessTokenEnv] : undefined;
+  return Boolean(env[account.clientIdEnv] && env[account.clientSecretEnv] && (refreshToken || accessToken));
 }
 
 export async function accountViews(
@@ -149,8 +184,7 @@ export async function authMaterial(
   account: Account,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{ clientId: string; clientSecret: string; refreshToken?: string; accessToken?: string }> {
-  const cached = account.refreshTokenEnv ? undefined : await cachedRefreshToken(config, account);
-  const refreshToken = (account.refreshTokenEnv && env[account.refreshTokenEnv]) || cached;
+  const refreshToken = await refreshTokenFor(config, account, env);
   const accessToken = account.accessTokenEnv ? env[account.accessTokenEnv] : undefined;
   const clientId = env[account.clientIdEnv];
   const clientSecret = env[account.clientSecretEnv];

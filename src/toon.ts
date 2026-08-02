@@ -5,13 +5,18 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function scalar(value: unknown): string {
   if (value === null || value === undefined) return "null";
   if (typeof value === "boolean" || typeof value === "number") return String(value);
+  if (Array.isArray(value) || isObject(value)) return JSON.stringify(value) || "null";
   const text = String(value);
   if (/^[A-Za-z0-9_./:@+~=-]+$/.test(text) && !/^(true|false|null)$/.test(text)) return text;
   return JSON.stringify(text);
 }
 
+function isFlatObject(value: unknown): value is Record<string, unknown> {
+  return isObject(value) && Object.values(value).every((field) => !Array.isArray(field) && !isObject(field));
+}
+
 function arrayLines(key: string, values: unknown[], indent: string): string[] {
-  if (values.length > 0 && values.every(isObject)) {
+  if (values.length > 0 && values.every(isFlatObject)) {
     const keys = [...new Set(values.flatMap((value) => Object.keys(value)))];
     const lines = [`${indent}${key}[${values.length}]{${keys.join(",")}}:`];
     for (const value of values) lines.push(`${indent}  ${keys.map((field) => scalar(value[field])).join(",")}`);

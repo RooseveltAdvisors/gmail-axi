@@ -95,7 +95,7 @@ function commandHelp(command: string): Record<string, unknown> {
       command: "doctor",
       description: "Check local configuration and account authorization without exposing secrets.",
       flags: ["--help"],
-      examples: ["gmail-axi doctor", "GMAIL_AXI_CONFIG=/tmp/accounts.toml gmail-axi doctor"],
+      examples: ["gmail-axi doctor", "GMAIL_AXI_CONFIG=~/.config/gmail-axi/accounts.toml gmail-axi doctor"],
     },
     search: {
       command: "search",
@@ -119,11 +119,11 @@ function commandHelp(command: string): Record<string, unknown> {
       command: "draft",
       description: "Create a Gmail draft; messages are never sent.",
       flags: ["--account <key> (required)", "--to <address> (required)", "--subject <text> (required)", "--body <text> (required)", "--help"],
-      examples: ["gmail-axi draft --account <key> --to recipient@example.com --subject \"Hello\" --body \"Draft text\"", "gmail-axi get --account <key> <draft-id>"],
+      examples: ["gmail-axi draft --account <key> --to recipient@example.com --subject \"Hello\" --body \"Draft text\"", "gmail-axi get --account <key> <message-id>"],
     },
     authorize: {
       command: "authorize",
-      description: "Authorize one account through a local Desktop OAuth callback.",
+      description: "Authorize one account through a local Desktop OAuth callback using gmail.readonly and gmail.compose.",
       flags: ["--account <key> (required)", "--help"],
       examples: ["gmail-axi authorize --account <key>", "gmail-axi doctor"],
     },
@@ -235,7 +235,8 @@ async function dispatch(command: string, args: string[], deps: Dependencies): Pr
   if (command === "authorize") {
     const accountConfig = findAccount(config, account);
     try {
-      return await deps.authorize(config, accountConfig, deps.env);
+      const result = await deps.authorize(config, accountConfig, deps.env);
+      return { ...result, help: [hint("gmail-axi accounts"), hint(`gmail-axi search --account ${account} --query \"newer_than:7d\"`)] };
     } catch (error) {
       throw new CliError("authorization_failed", error instanceof Error ? error.message : "Authorization failed", 1, { help: [hint(`gmail-axi authorize --account ${account}`)] });
     }
@@ -266,7 +267,8 @@ async function dispatch(command: string, args: string[], deps: Dependencies): Pr
   const to = required(parsed.options, "to");
   const subject = required(parsed.options, "subject");
   const body = required(parsed.options, "body");
-  return { account, draft: await client.createDraft(to, subject, body), help: [hint(`gmail-axi get --account ${account} <draft-id>`)] };
+  const draft = await client.createDraft(to, subject, body);
+  return { account, draft, help: [hint(`gmail-axi get --account ${account} ${draft.message_id}`), hint(`gmail-axi thread --account ${account} ${draft.thread_id}`)] };
 }
 
 function errorOutput(error: CliError): Record<string, unknown> {

@@ -55,6 +55,7 @@ export type SearchOptions = {
 
 export type DraftResult = {
   draft_id: string;
+  message_id: string;
   thread_id: string;
   status: "draft";
 };

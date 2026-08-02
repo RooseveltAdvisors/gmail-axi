@@ -13,4 +13,8 @@ describe("TOON output", () => {
       'help[1]:\n  "Run `gmail-axi doctor`"\nbody: "first\\nsecond"\n',
     );
   });
+
+  it("preserves nested values instead of flattening them into table columns", () => {
+    expect(toon({ messages: [{ id: "a", labels: ["INBOX", "IMPORTANT"] }] })).toContain('"labels":["INBOX","IMPORTANT"]');
+  });
 });
