@@ -5,6 +5,7 @@ dist/
 !.env.example
 accounts.toml
 **/accounts.local.toml
+tokens/
 *token*
 *Token*
 credentials*
@@ -13,4 +14,5 @@ credentials*
 *.pem
 .DS_Store
 .no-mistakes/
+.scopey/
 coverage/

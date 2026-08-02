@@ -26,7 +26,7 @@ Accounts are **not** hard-coded. Operators configure mailboxes locally. Secrets 
 npx skills add RooseveltAdvisors/gmail-axi --skill gmail-axi -g
 
 # or CLI
-npm install -g gmail-axi
+bun add -g gmail-axi
 # or
 npx -y gmail-axi
 ```

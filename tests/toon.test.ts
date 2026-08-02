@@ -1,0 +1,16 @@
+import { describe, expect, it } from "vitest";
+import { toon } from "../src/toon.js";
+
+describe("TOON output", () => {
+  it("serializes compact object collections", () => {
+    expect(toon({ count: 2, messages: [{ id: "a", subject: "Hello", has_attachments: false }, { id: "b", subject: "A, comma", has_attachments: true }] })).toBe(
+      'count: 2\nmessages[2]{id,subject,has_attachments}:\n  a,Hello,false\n  b,"A, comma",true\n',
+    );
+  });
+
+  it("quotes actionable strings and preserves multiline content", () => {
+    expect(toon({ help: ["Run `gmail-axi doctor`"], body: "first\nsecond" })).toBe(
+      'help[1]:\n  "Run `gmail-axi doctor`"\nbody: "first\\nsecond"\n',
+    );
+  });
+});
