@@ -36,8 +36,8 @@ npx -y gmail-axi
 ## Configure
 
 ```sh
-mkdir -p ~/.config/gmail-axi
-cp accounts.example.toml ~/.config/gmail-axi/accounts.toml
+gmail-axi doctor
+# If config is missing, run the package-resolved copy command shown in help.
 # edit accounts.toml — set emails and secret env var names
 ```
 

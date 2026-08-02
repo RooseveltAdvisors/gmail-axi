@@ -28,5 +28,11 @@ describe("account configuration", () => {
     const config = { path: join(homedir(), ".config/gmail-axi/accounts.toml"), exists: true, accounts: [{ key: "work", email: "you@example.com", clientIdEnv: "ID", clientSecretEnv: "SECRET", accessTokenEnv: "ACCESS" }] };
     await expect(accountHasCredentials(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "access" })).resolves.toBe(true);
     expect(clientCredentials(config.accounts[0], { ID: "id", SECRET: "secret" })).toEqual({ clientId: "id", clientSecret: "secret" });
+    expect(() => clientCredentials(config.accounts[0], {})).toThrow(ConfigError);
+    try {
+      clientCredentials(config.accounts[0], {});
+    } catch (error) {
+      expect(error).toMatchObject({ code: "not_authorized", help: ["Run `gmail-axi authorize --account work`", "Run `gmail-axi doctor`"] });
+    }
   });
 });

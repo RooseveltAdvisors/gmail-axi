@@ -72,6 +72,10 @@ describe("Gmail client", () => {
 
     const emptyListClient = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, async () => new Response(JSON.stringify({ resultSizeEstimate: 0 }), { status: 200 }));
     await expect(emptyListClient.search({ limit: 1 })).resolves.toMatchObject({ count: 0, returned: 0, messages: [] });
+
+    const refreshAccount = { ...config.accounts[0], accessTokenEnv: undefined, refreshTokenEnv: "REFRESH" };
+    const emptyTokenClient = new GmailClient(config, refreshAccount, { ID: "id", SECRET: "secret", REFRESH: "refresh" }, async () => new Response(JSON.stringify({ access_token: "" }), { status: 200 }));
+    await expect(emptyTokenClient.search({ limit: 1 })).rejects.toMatchObject({ code: "auth_failed" });
   });
 
   it("creates drafts through the drafts endpoint", async () => {

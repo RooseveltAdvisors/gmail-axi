@@ -167,7 +167,7 @@ export class GmailClient implements GmailOperations {
     });
     if (!response.ok) throw new GmailError("auth_failed", "Google authorization failed", response.status, this.authorizationHelp());
     const data = await jsonResponse(response, "the authorization response");
-    if (typeof data.access_token !== "string") throw new GmailError("auth_failed", "Google authorization returned no access token", undefined, this.authorizationHelp());
+    if (typeof data.access_token !== "string" || !data.access_token.trim()) throw new GmailError("auth_failed", "Google authorization returned no access token", undefined, this.authorizationHelp());
     this.accessToken = data.access_token;
     return data.access_token;
   }

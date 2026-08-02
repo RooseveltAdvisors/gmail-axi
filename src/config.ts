@@ -179,13 +179,17 @@ export function findAccount(config: ConfigState, key: string): Account {
   return account;
 }
 
+function authorizationHelp(account: Account): string[] {
+  return [`Run \`gmail-axi authorize --account ${account.key}\``, "Run `gmail-axi doctor`"];
+}
+
 export function clientCredentials(
   account: Account,
   env: NodeJS.ProcessEnv = process.env,
 ): { clientId: string; clientSecret: string } {
   const clientId = env[account.clientIdEnv];
   const clientSecret = env[account.clientSecretEnv];
-  if (!clientId || !clientSecret) throw new ConfigError(`Account ${account.key} is missing OAuth client credentials`, "not_authorized");
+  if (!clientId || !clientSecret) throw new ConfigError(`Account ${account.key} is missing OAuth client credentials`, "not_authorized", authorizationHelp(account));
   return { clientId, clientSecret };
 }
 
@@ -197,11 +201,8 @@ export async function authMaterial(
   const accessToken = account.accessTokenEnv ? env[account.accessTokenEnv] : undefined;
   const refreshToken = accessToken ? undefined : await refreshTokenFor(config, account, env);
   const { clientId, clientSecret } = clientCredentials(account, env);
-  if (!clientId || !clientSecret || (!refreshToken && !accessToken)) {
-    throw new ConfigError(`Account ${account.key} is not authorized`, "not_authorized", [
-      `Run \`gmail-axi authorize --account ${account.key}\``,
-      "Run `gmail-axi doctor`",
-    ]);
+  if (!refreshToken && !accessToken) {
+    throw new ConfigError(`Account ${account.key} is not authorized`, "not_authorized", authorizationHelp(account));
   }
   return { clientId, clientSecret, refreshToken, accessToken };
 }
