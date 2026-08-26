@@ -22,6 +22,14 @@ values were written to `~/.config/gmail-axi/credentials.env` and the refresh
 token to `~/.config/gmail-axi/tokens/jon-arcs.json`. No OAuth value is present
 in this repository.
 
+Exact local files changed by the bootstrap, with secret values omitted:
+
+- `~/.config/gmail-axi/accounts.toml`
+- `~/.config/gmail-axi/credentials.env`
+- `~/.config/gmail-axi/tokens/jon-arcs.json`
+- `~/.config/gmail-axi/quarantine/tokens/jon-personal.json`
+- `~/.config/gmail-axi/quarantine/tokens/rooseveltadvisors.json`
+
 Verify those NeoMutt files remain unchanged without printing their contents:
 
 ```sh
