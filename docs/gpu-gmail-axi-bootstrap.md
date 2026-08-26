@@ -12,11 +12,34 @@ local config; none belong in this repository.
 | `jon-personal` | Consumer fallback | Quarantined | Live search returned `auth_failed` / `Google authorization failed`; token retained under `~/.config/gmail-axi/quarantine/tokens/`. |
 | `rooseveltadvisors` | Consumer fallback | Quarantined | Live search returned `auth_failed` / `Google authorization failed`; token retained under `~/.config/gmail-axi/quarantine/tokens/`. |
 
-The approved NeoMutt OAuth token was decrypted in memory using the authorized
-`/home/jon/.config/neomutt/.token-pass` path. Its Google client values were
-written to `~/.config/gmail-axi/credentials.env` and its refresh token to
-`~/.config/gmail-axi/tokens/jon-arcs.json`; the authorized NeoMutt source files
-were hash-verified unchanged. No OAuth value is present in this repository.
+The approved NeoMutt OAuth token source was
+`/home/jon/.config/neomutt/tokens`; decryption used the authorized passphrase
+file `/home/jon/.config/neomutt/.token-pass`. The only other authorized
+NeoMutt source files were `/home/jon/.config/neomutt/mutt_oauth2.py`,
+`/home/jon/.config/neomutt/neomuttrc`, and
+`/home/jon/.config/neomutt/neomuttrc.20260826T011700Z`. Their Google client
+values were written to `~/.config/gmail-axi/credentials.env` and the refresh
+token to `~/.config/gmail-axi/tokens/jon-arcs.json`. No OAuth value is present
+in this repository.
+
+Verify those NeoMutt files remain unchanged without printing their contents:
+
+```sh
+sha256sum \
+  /home/jon/.config/neomutt/.token-pass \
+  /home/jon/.config/neomutt/mutt_oauth2.py \
+  /home/jon/.config/neomutt/neomuttrc \
+  /home/jon/.config/neomutt/neomuttrc.20260826T011700Z \
+  /home/jon/.config/neomutt/tokens
+```
+
+Expected hashes are `49a87f0e4d1b7bcc60eaf2203027d92b87e0870850cc769ebf7bde1162ebb841`,
+`fccb41cc9aaeb78c21d39669b7611cb9b3a3b14edb19c5d4f600a9c57c37de89`,
+`48e3bcb29bce894c18f5deea3c2379132e621f5abed9ea0a9d5d73e6ad20fb8a`,
+`4ab23e351b428ea70770d775621f73911138a69fc95630cdb17f041c090affa6`, and
+`b0d9a3717851a6ea1aa1a4d93062c0c0c19bab89dbc40815a9023c033746b730`, in
+the same order. Any mismatch means the source material changed and must not be
+reused automatically.
 
 Do not use `gmail-axi authorize` for this bootstrap: it opens an OAuth browser
 flow, which is outside the agent-mail safety policy. Use only an already
