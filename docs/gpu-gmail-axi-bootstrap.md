@@ -8,18 +8,15 @@ local config; none belong in this repository.
 
 | Account key | Role | State | Evidence / next action |
 | --- | --- | --- | --- |
-| `jon-arcs` | Canonical agent work mailbox | Pending approved OAuth material | Active in `~/.config/gmail-axi/accounts.toml`; provision `GMAIL_AXI_ARCS_CLIENT_ID`, `GMAIL_AXI_ARCS_CLIENT_SECRET`, and `GMAIL_AXI_ARCS_REFRESH_TOKEN` locally, then run the proof commands below. |
+| `jon-arcs` | Canonical agent work mailbox | Repaired and live-proven | Active in `~/.config/gmail-axi/accounts.toml`; bounded `from:(whipple)` search passed with exit 0. |
 | `jon-personal` | Consumer fallback | Quarantined | Live search returned `auth_failed` / `Google authorization failed`; token retained under `~/.config/gmail-axi/quarantine/tokens/`. |
 | `rooseveltadvisors` | Consumer fallback | Quarantined | Live search returned `auth_failed` / `Google authorization failed`; token retained under `~/.config/gmail-axi/quarantine/tokens/`. |
 
-The approved local fallback client file was inspected only for structure at
-`~/.config/gws-axi/credentials.json`; it contains an installed-client object,
-not a refresh token. The exact missing approved material for `jon-arcs` is:
-
-- client values available to the launcher as `GMAIL_AXI_ARCS_CLIENT_ID` and
-  `GMAIL_AXI_ARCS_CLIENT_SECRET` in `~/.config/gmail-axi/credentials.env`;
-- a refresh token either as `GMAIL_AXI_ARCS_REFRESH_TOKEN` in that same file or
-  in `~/.config/gmail-axi/tokens/jon-arcs.json`.
+The approved NeoMutt OAuth token was decrypted in memory using the authorized
+`/home/jon/.config/neomutt/.token-pass` path. Its Google client values were
+written to `~/.config/gmail-axi/credentials.env` and its refresh token to
+`~/.config/gmail-axi/tokens/jon-arcs.json`; the authorized NeoMutt source files
+were hash-verified unchanged. No OAuth value is present in this repository.
 
 Do not use `gmail-axi authorize` for this bootstrap: it opens an OAuth browser
 flow, which is outside the agent-mail safety policy. Use only an already
@@ -37,6 +34,9 @@ gmail-axi search --account jon-arcs --query 'from:(whipple)' --limit 1
 
 The search is read-only, bounded, and uses metadata only. Do not follow it with
 `get` or `thread` unless separately authorized.
+
+Successful proof on GPU: `accounts` and `doctor` report `jon-arcs` as
+`ready`; the bounded search returned `count: 201`, `returned: 1`, and exit 0.
 
 ## Re-enabling a quarantined consumer
 
