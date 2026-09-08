@@ -78,6 +78,19 @@ describe("Gmail client", () => {
     await expect(emptyTokenClient.search({ limit: 1 })).rejects.toMatchObject({ code: "auth_failed" });
   });
 
+  it("resolves RFC Message-IDs with Gmail's rfc822msgid search", async () => {
+    const requests: string[] = [];
+    const fetcher = async (input: string | URL) => {
+      requests.push(String(input));
+      if (String(input).includes("/messages?")) return new Response(JSON.stringify({ resultSizeEstimate: 1, messages: [{ id: "message-1", threadId: "thread-1" }] }), { status: 200 });
+      const { threadId: _threadId, ...metadataMessage } = message;
+      return new Response(JSON.stringify(metadataMessage), { status: 200 });
+    };
+    const client = new GmailClient(config, config.accounts[0], { ID: "id", SECRET: "secret", ACCESS: "x" }, fetcher);
+    await expect(client.findMessageByRfc822Id("<abc@example.com>")).resolves.toMatchObject({ id: "message-1", thread_id: "thread-1" });
+    expect(requests[0]).toContain("q=rfc822msgid%3A%22%3Cabc%40example.com%3E%22");
+  });
+
   it("creates drafts through the drafts endpoint", async () => {
     let request: RequestInit | undefined;
     const fetcher = async (input: string | URL, init?: RequestInit) => {

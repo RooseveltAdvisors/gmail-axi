@@ -218,6 +218,11 @@ export class GmailClient implements GmailOperations {
     return { count: estimate, returned: messages.length, query, messages: messages.map((message) => summary(message, false)) };
   }
 
+  async findMessageByRfc822Id(messageId: string): Promise<MessageSummary | undefined> {
+    const result = await this.search({ query: `rfc822msgid:"${messageId}"`, limit: 10 });
+    return result.messages[0];
+  }
+
   private async message(id: string, threadId?: string): Promise<GmailMessage> {
     const params = new URLSearchParams({ format: "metadata" });
     for (const field of ["Subject", "From", "Date"]) params.append("metadataHeaders", field);

@@ -11,9 +11,18 @@ const config: ConfigState = {
   accounts: [{ key: "work", email: "you@example.com", clientIdEnv: "ID", clientSecretEnv: "SECRET", accessTokenEnv: "ACCESS" }],
 };
 
+const multiConfig: ConfigState = {
+  ...config,
+  accounts: [
+    config.accounts[0],
+    { key: "personal", email: "personal@example.com", clientIdEnv: "ID", clientSecretEnv: "SECRET", accessTokenEnv: "ACCESS" },
+  ],
+};
+
 function fakeClient(): GmailOperations {
   return {
     search: async () => ({ count: 0, returned: 0, query: "", messages: [] }),
+    findMessageByRfc822Id: async () => undefined,
     getMessage: async (id) => ({ id, thread_id: "thread-1", subject: "Subject", from: "you@example.com", to: "recipient@example.com", date: "", snippet: "", has_attachments: false, labels: [], body: "body", body_size: 4 }),
     getThread: async (id) => ({ thread_id: id, message_count: 0, subject: "", participants: [], messages: [] }),
     createDraft: async () => ({ draft_id: "draft-1", message_id: "message-1", thread_id: "thread-1", status: "draft" }),
@@ -124,5 +133,56 @@ describe("CLI contracts", () => {
     });
     expect(code).toBe(0);
     expect(output).toContain("accounts.example.toml");
+  });
+
+  it("resolves get --mid and supports JSON output", async () => {
+    let output = "";
+    const client = fakeClient();
+    client.findMessageByRfc822Id = async (mid) => {
+      expect(mid).toBe("<abc@example.com>");
+      return { id: "message-1", thread_id: "thread-1", subject: "Subject", from: "you@example.com", date: "" };
+    };
+    const code = await run(["get", "--mid", "neomd://mid/%3Cabc%40example.com%3E?folder=inbox", "--account", "work", "--json"], {
+      loadConfig: async () => config,
+      createClient: async () => client,
+      env: {},
+      stdout: (text) => { output += text; },
+    });
+    expect(code).toBe(0);
+    expect(JSON.parse(output)).toMatchObject({ account: "work", message: { id: "message-1" } });
+  });
+
+  it("resolves thread --mid to the matching thread", async () => {
+    let output = "";
+    const client = fakeClient();
+    client.findMessageByRfc822Id = async () => ({ id: "message-1", thread_id: "thread-1", subject: "Subject", from: "you@example.com", date: "" });
+    client.getThread = async (id) => ({ thread_id: id, message_count: 0, subject: "Subject", participants: [], messages: [] });
+    const code = await run(["thread", "--account", "work", "--mid", "abc@example.com"], {
+      loadConfig: async () => config,
+      createClient: async () => client,
+      env: {},
+      stdout: (text) => { output += text; },
+    });
+    expect(code).toBe(0);
+    expect(output).toContain("account: work");
+    expect(output).toContain("thread_id: thread-1");
+  });
+
+  it("fans out MID lookup and reports searched accounts when absent", async () => {
+    let output = "";
+    const searched: string[] = [];
+    const code = await run(["thread", "--mid", "<missing@example.com>"], {
+      loadConfig: async () => multiConfig,
+      createClient: async (_config, account) => {
+        searched.push(account);
+        return fakeClient();
+      },
+      env: {},
+      stdout: (text) => { output += text; },
+    });
+    expect(code).toBe(1);
+    expect(searched.sort()).toEqual(["personal", "work"]);
+    expect(output).toContain("code: not_found");
+    expect(output).toContain("accounts_searched[2]: work,personal");
   });
 });
