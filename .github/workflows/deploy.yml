@@ -1,0 +1,56 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'tsconfig.json'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-gpu
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, gpu]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bun test
+      - name: Install stable copy
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$HOME/.local/lib/gmail-axi"
+          previous="$HOME/.local/lib/gmail-axi.prev"
+          staging="$HOME/.local/lib/gmail-axi.next"
+          rm -rf "$staging"
+          mkdir -p "$staging"
+          cp -R dist package.json README.md LICENSE accounts.example.toml skills "$staging"/
+          rm -rf "$previous"
+          if [[ -d "$install_root" ]]; then cp -R "$install_root" "$previous"; fi
+          rm -rf "$install_root"
+          mv "$staging" "$install_root"
+          mkdir -p "$HOME/.local/bin"
+          printf '%s\n' '#!/usr/bin/env bash' 'exec "$HOME/.local/lib/gmail-axi/dist/cli.js" "$@"' > "$HOME/.local/bin/gmail-axi"
+          chmod +x "$HOME/.local/bin/gmail-axi"
+      - name: Verify installed CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          gmail-axi --help
+          gmail-axi accounts

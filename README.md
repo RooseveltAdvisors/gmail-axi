@@ -56,6 +56,12 @@ gmail-axi --help
 Without `--account`, configured accounts are searched and the matching account is
 reported. Sending remains disabled; use `draft` for outbound mail preparation.
 
+## Deployment
+
+Merging to `main` deploys the built CLI to the GPU through the repository's
+GitHub Action and verifies `gmail-axi --help` and `gmail-axi accounts`. Never
+rebuild the installed copy by hand on the GPU.
+
 ## AXI
 
 Implements the [AXI](https://axi.md) design principles for agent-ergonomic CLIs.
