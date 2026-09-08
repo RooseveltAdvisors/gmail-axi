@@ -40,6 +40,10 @@ jobs:
           rm -rf "$staging"
           mkdir -p "$staging"
           cp -R dist package.json README.md LICENSE accounts.example.toml skills "$staging"/
+          if [[ "$(head -n1 "$staging/dist/cli.js")" != '#!/usr/bin/env node' ]]; then
+            sed -i '1i#!/usr/bin/env node' "$staging/dist/cli.js"
+          fi
+          chmod +x "$staging/dist/cli.js"
           rm -rf "$previous"
           if [[ -d "$install_root" ]]; then cp -R "$install_root" "$previous"; fi
           rm -rf "$install_root"
@@ -52,5 +56,19 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PATH"
-          gmail-axi --help
+          previous="$HOME/.local/lib/gmail-axi.prev"
+          install_root="$HOME/.local/lib/gmail-axi"
+          rollback() {
+            status=$?
+            trap - EXIT
+            if [[ -d "$previous" ]]; then
+              rm -rf "$install_root"
+              mv "$previous" "$install_root"
+              "$HOME/.local/bin/gmail-axi" --help || true
+            fi
+            exit "$status"
+          }
+          trap rollback EXIT
+          "$HOME/.local/bin/gmail-axi" --help
           gmail-axi accounts
+          trap - EXIT
