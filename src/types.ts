@@ -67,6 +67,7 @@ export type GmailOperations = {
     query: string;
     messages: MessageSummary[];
   }>;
+  findMessageByRfc822Id(messageId: string): Promise<MessageSummary | undefined>;
   getMessage(id: string, full: boolean): Promise<MessageDetail>;
   getThread(id: string, full: boolean): Promise<ThreadDetail>;
   createDraft(to: string, subject: string, body: string): Promise<DraftResult>;

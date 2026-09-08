@@ -48,8 +48,13 @@ gmail-axi
 gmail-axi accounts
 gmail-axi search --account <key> --query "newer_than:7d"
 gmail-axi get --account <key> <messageId>
+gmail-axi get --mid 'neomd://mid/%3C...%3E' --account <key>
 gmail-axi --help
 ```
+
+`get` and `thread` also accept a bare or bracketed RFC Message-ID with `--mid`.
+Without `--account`, configured accounts are searched and the matching account is
+reported. Sending remains disabled; use `draft` for outbound mail preparation.
 
 ## AXI
 

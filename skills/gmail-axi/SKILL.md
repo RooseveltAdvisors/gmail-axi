@@ -24,9 +24,13 @@ Carry `--account <key>` on mail operations:
 npx -y gmail-axi search --account <key> --query "newer_than:7d" --limit 20
 npx -y gmail-axi get --account <key> <message-id>
 npx -y gmail-axi thread --account <key> <thread-id> --full
+npx -y gmail-axi get --mid 'neomd://mid/%3C...%3E' --account <key>
 npx -y gmail-axi draft --account <key> --to <address> --subject "<subject>" --body "<body>"
 ```
 
 Bodies are truncated unless `--full` is passed. `gmail-axi` creates drafts but
 deliberately has no send operation. Use `npx -y gmail-axi <command> --help`
 when a command's flags or examples are needed.
+
+The captain must authorize any new mailbox on the target machine, including gpu:
+run `gmail-axi authorize --account <key>` and complete the browser consent step.

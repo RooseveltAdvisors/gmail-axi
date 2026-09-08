@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { accountViews, ConfigError, displayPath, findAccount, loadConfig } from "./config.js";
 import { GmailClient, GmailError } from "./gmail.js";
+import { MidError, parseMessageId } from "./mid.js";
 import { authorizeAccount } from "./oauth.js";
 import { toon } from "./toon.js";
 import type { ConfigState, GmailOperations } from "./types.js";
@@ -90,43 +91,43 @@ function commandHelp(command: string): Record<string, unknown> {
     accounts: {
       command: "accounts",
       description: "Show configured accounts and live authorization status.",
-      flags: ["--help"],
+      flags: ["--json", "--help"],
       examples: ["gmail-axi accounts", "gmail-axi doctor"],
     },
     doctor: {
       command: "doctor",
       description: "Check local configuration and account authorization without exposing secrets.",
-      flags: ["--help"],
+      flags: ["--json", "--help"],
       examples: ["gmail-axi doctor", "GMAIL_AXI_CONFIG=~/.config/gmail-axi/accounts.toml gmail-axi doctor"],
     },
     search: {
       command: "search",
       description: "Search Gmail and return compact message summaries.",
-      flags: ["--account <key> (required)", "--query <gmail-query>", "--from <address>", "--since <YYYY-MM-DD>", "--newer-than-days <n>", "--limit <n> (default 50)", "--help"],
+      flags: ["--account <key> (required)", "--query <gmail-query>", "--from <address>", "--since <YYYY-MM-DD>", "--newer-than-days <n>", "--limit <n> (default 50)", "--json", "--help"],
       examples: ["gmail-axi search --account <key> --query \"from:you@example.com\"", "gmail-axi search --account <key> --newer-than-days 7 --limit 20", "gmail-axi search --account <key> --from you@example.com --since 2026-01-01"],
     },
     get: {
       command: "get",
       description: "Read one Gmail message with a truncated body by default.",
-      flags: ["--account <key> (required)", "--full", "--help"],
-      examples: ["gmail-axi get --account <key> <message-id>", "gmail-axi get --account <key> <message-id> --full"],
+      flags: ["--account <key>", "--mid <Message-ID>", "--full", "--json", "--help"],
+      examples: ["gmail-axi get --account <key> <message-id>", "gmail-axi get --mid '<Message-ID>'", "gmail-axi get --account <key> <message-id> --full"],
     },
     thread: {
       command: "thread",
       description: "Read one Gmail thread with compact messages by default.",
-      flags: ["--account <key> (required)", "--full", "--help"],
-      examples: ["gmail-axi thread --account <key> <thread-id>", "gmail-axi thread --account <key> <thread-id> --full"],
+      flags: ["--account <key>", "--mid <Message-ID>", "--full", "--json", "--help"],
+      examples: ["gmail-axi thread --account <key> <thread-id>", "gmail-axi thread --mid '<Message-ID>'", "gmail-axi thread --account <key> <thread-id> --full"],
     },
     draft: {
       command: "draft",
       description: "Create a Gmail draft; messages are never sent.",
-      flags: ["--account <key> (required)", "--to <address> (required)", "--subject <text> (required)", "--body <text> (required)", "--help"],
+      flags: ["--account <key> (required)", "--to <address> (required)", "--subject <text> (required)", "--body <text> (required)", "--json", "--help"],
       examples: ["gmail-axi draft --account <key> --to recipient@example.com --subject \"Hello\" --body \"Draft text\"", "gmail-axi get --account <key> <message-id>"],
     },
     authorize: {
       command: "authorize",
       description: "Authorize one account through a local Desktop OAuth callback using gmail.readonly and gmail.compose.",
-      flags: ["--account <key> (required)", "--help"],
+      flags: ["--account <key> (required)", "--json", "--help"],
       examples: ["gmail-axi authorize --account <key>", "gmail-axi doctor"],
     },
   };
@@ -138,7 +139,7 @@ function globalHelp(): Record<string, unknown> {
     command: "gmail-axi",
     description: DESCRIPTION,
     commands: ["accounts", "doctor", "search", "get", "thread", "draft", "authorize"],
-    flags: ["--help"],
+    flags: ["--help", "--json"],
     examples: ["gmail-axi", "gmail-axi search --account <key> --query \"newer_than:7d\"", "gmail-axi draft --account <key> --to recipient@example.com --subject \"Hello\" --body \"Draft\""],
     note: "There is deliberately no send command.",
   };
@@ -150,6 +151,43 @@ function accountHelp(command: string, account: string, messageId?: string): stri
   const next = [hint(`${prefix} --query "newer_than:7d"`)];
   if (messageId) next.push(hint(`gmail-axi get --account ${account} ${messageId}`));
   return next;
+}
+
+type MidMatch = { account: string; client: GmailOperations; messageId: string; threadId?: string };
+
+async function resolveMessageId(
+  deps: Dependencies,
+  config: ConfigState,
+  accountKey: string | undefined,
+  messageId: string,
+): Promise<MidMatch> {
+  const accountKeys = accountKey ? [accountKey] : config.accounts.map((account) => account.key);
+  const attempts = await Promise.all(accountKeys.map(async (key) => {
+    try {
+      const client = await deps.createClient(config, key);
+      const message = await client.findMessageByRfc822Id(messageId);
+      return { key, client, message };
+    } catch (error) {
+      return { key, error };
+    }
+  }));
+  const match = attempts.find((attempt) => "message" in attempt && attempt.message);
+  if (match && "message" in match && match.message) {
+    return { account: match.key, client: match.client, messageId: match.message.id, threadId: match.message.thread_id };
+  }
+  const failure = attempts.find((attempt) => "error" in attempt);
+  if (accountKey && failure && "error" in failure) throw failure.error;
+  if (!accountKey && failure && attempts.every((attempt) => "error" in attempt)) throw failure.error;
+  const failures = attempts.filter((attempt): attempt is typeof attempt & { error: unknown } => "error" in attempt).map(({ key, error }) => ({
+    account: key,
+    code: error instanceof Error && "code" in error && typeof error.code === "string" ? error.code : "search_failed",
+    message: error instanceof Error ? error.message : "Account search failed",
+  }));
+  throw new CliError("not_found", `No Gmail message matched ${messageId}`, 1, {
+    accounts_searched: accountKeys,
+    ...(failures.length ? { accounts_failed: failures } : {}),
+    help: [hint("gmail-axi accounts"), hint("gmail-axi doctor")],
+  });
 }
 
 function hint(command: string): string {
@@ -228,16 +266,48 @@ async function dispatch(command: string, args: string[], deps: Dependencies): Pr
     ? { account: "value", query: "value", from: "value", since: "value", "newer-than-days": "value", limit: "value" }
     : command === "draft"
       ? { account: "value", to: "value", subject: "value", body: "value" }
-      : { account: "value", full: "boolean" };
+      : { account: "value", mid: "value", full: "boolean" };
   const parsed = parseArgs(args, specs);
-  const account = required(parsed.options, "account");
+  const account = typeof parsed.options.account === "string" ? parsed.options.account : undefined;
+  if (["search", "draft", "authorize"].includes(command) && !account) required(parsed.options, "account");
   if (command === "authorize" && parsed.positionals.length) throw new CliError("unexpected_argument", "authorize does not accept positional arguments", 2);
   if (command === "search" && parsed.positionals.length) throw new CliError("unexpected_argument", "search does not accept positional arguments", 2);
   if (command === "draft" && parsed.positionals.length) throw new CliError("unexpected_argument", "draft does not accept positional arguments", 2);
   const id = parsed.positionals[0];
-  if ((command === "get" || command === "thread") && (!id || parsed.positionals.length > 1)) {
+  const mid = typeof parsed.options.mid === "string" ? parsed.options.mid : undefined;
+  if ((command === "get" || command === "thread") && ((id && mid) || (!id && !mid) || parsed.positionals.length > 1)) {
     throw new CliError("missing_id", `${command} requires exactly one message or thread id`, 2);
   }
+  if ((command === "get" || command === "thread") && mid) {
+    const config = await deps.loadConfig(deps.env);
+    if (!config.exists) throw new CliError("config_missing", "Account configuration was not found", 1, { path: displayPath(config.path), help: missingConfigHelp() });
+    if (account) {
+      try {
+        findAccount(config, account);
+      } catch (error) {
+        if (error instanceof ConfigError) throw new CliError(error.code, error.message, 1, { help: [hint("gmail-axi accounts"), hint(`gmail-axi authorize --account ${account}`)] });
+        throw error;
+      }
+    }
+    let normalizedMid: string;
+    try {
+      normalizedMid = parseMessageId(mid);
+    } catch (error) {
+      if (error instanceof MidError) throw new CliError(error.code, error.message, 2);
+      throw error;
+    }
+    const resolved = await resolveMessageId(deps, config, account, normalizedMid);
+    if (command === "get") {
+      const output: Record<string, unknown> = { account: resolved.account, message: await resolved.client.getMessage(resolved.messageId, parsed.options.full === true) };
+      if (parsed.options.full !== true) output.help = [hint(`gmail-axi get --account ${resolved.account} ${resolved.messageId} --full`)];
+      return output;
+    }
+    if (!resolved.threadId) throw new CliError("invalid_response", "Gmail returned a matching message without a thread id");
+    const output: Record<string, unknown> = { account: resolved.account, thread: await resolved.client.getThread(resolved.threadId, parsed.options.full === true) };
+    if (parsed.options.full !== true) output.help = [hint(`gmail-axi thread --account ${resolved.account} ${resolved.threadId} --full`)];
+    return output;
+  }
+  if (!account) throw new CliError("missing_flag", "--account is required", 2);
   const { config, client } = await accountClient(deps, account);
   if (command === "authorize") {
     const accountConfig = findAccount(config, account);
@@ -287,17 +357,20 @@ function errorOutput(error: CliError): Record<string, unknown> {
 
 export async function run(argv: string[], overrides: Partial<Dependencies> = {}): Promise<number> {
   const deps = { ...defaultDependencies(), ...overrides };
+  const json = argv.includes("--json");
+  const commandArgs = argv.filter((argument) => argument !== "--json");
+  const output = (value: Record<string, unknown>): string => json ? `${JSON.stringify(value)}\n` : toon(value);
   try {
-    if (!argv.length) {
-      deps.stdout(toon(await home(deps)));
+    if (!commandArgs.length) {
+      deps.stdout(output(await home(deps)));
       return 0;
     }
-    if (argv[0] === "--help" || argv[0] === "-h") {
-      deps.stdout(toon(globalHelp()));
+    if (commandArgs[0] === "--help" || commandArgs[0] === "-h") {
+      deps.stdout(output(globalHelp()));
       return 0;
     }
-    const [command, ...args] = argv;
-    deps.stdout(toon(await dispatch(command, args, deps)));
+    const [command, ...args] = commandArgs;
+    deps.stdout(output(await dispatch(command, args, deps)));
     return 0;
   } catch (error) {
     const normalized = error instanceof CliError
@@ -308,7 +381,7 @@ export async function run(argv: string[], overrides: Partial<Dependencies> = {})
           ? new CliError(error.code, error.message, 1, { help: error.help })
           : new CliError("internal_error", "Command failed");
     deps.stderr(normalized.code === "internal_error" ? "[gmail-axi] command failed\n" : "");
-    deps.stdout(toon(errorOutput(normalized)));
+    deps.stdout(output(errorOutput(normalized)));
     return normalized.exitCode;
   }
 }
