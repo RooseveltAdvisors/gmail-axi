@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accountHasCredentials, clientCredentials, ConfigError, configPath, parseAccountsToml, validateAccountId } from "../src/config.js";
+import { accountHasCredentials, accountViews, clientCredentials, ConfigError, configPath, parseAccountsToml, validateAccountId } from "../src/config.js";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -34,5 +34,18 @@ describe("account configuration", () => {
     } catch (error) {
       expect(error).toMatchObject({ code: "not_authorized", help: ["Run `gmail-axi authorize --account work`", "Run `gmail-axi doctor`"] });
     }
+  });
+
+  it("reports client credentials separately from full auth readiness", async () => {
+    const config = { path: join(homedir(), ".config/gmail-axi/accounts.toml"), exists: true, accounts: [{ key: "work", email: "you@example.com", clientIdEnv: "ID", clientSecretEnv: "SECRET", accessTokenEnv: "ACCESS" }] };
+    await expect(accountViews(config, { ID: "id", SECRET: "secret", ACCESS: "access" })).resolves.toEqual([
+      { key: "work", email: "you@example.com", auth: "ready", credentials: "ready" },
+    ]);
+    await expect(accountViews(config, { ID: "id", SECRET: "secret" })).resolves.toEqual([
+      { key: "work", email: "you@example.com", auth: "missing", credentials: "ready" },
+    ]);
+    await expect(accountViews(config, { ACCESS: "access" })).resolves.toEqual([
+      { key: "work", email: "you@example.com", auth: "missing", credentials: "missing" },
+    ]);
   });
 });

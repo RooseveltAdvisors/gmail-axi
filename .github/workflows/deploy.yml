@@ -49,7 +49,15 @@ jobs:
           rm -rf "$install_root"
           mv "$staging" "$install_root"
           mkdir -p "$HOME/.local/bin"
-          printf '%s\n' '#!/usr/bin/env bash' 'exec "$HOME/.local/lib/gmail-axi/dist/cli.js" "$@"' > "$HOME/.local/bin/gmail-axi"
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'set -euo pipefail' \
+            'CFG_ENV="${HOME}/.config/gmail-axi/credentials.env"' \
+            'if [[ -f "$CFG_ENV" ]]; then' \
+            '  # shellcheck disable=SC1090' \
+            '  source "$CFG_ENV"' \
+            'fi' \
+            'exec "$HOME/.local/lib/gmail-axi/dist/cli.js" "$@"' > "$HOME/.local/bin/gmail-axi"
           chmod +x "$HOME/.local/bin/gmail-axi"
       - name: Verify installed CLI
         shell: bash
@@ -71,4 +79,12 @@ jobs:
           trap rollback EXIT
           "$HOME/.local/bin/gmail-axi" --help
           gmail-axi accounts
+          # accounts/doctor succeed without env, so also require doctor to resolve
+          # client credentials for at least one account (no tokens are minted).
+          # This catches a wrapper that fails to source credentials.env, which is
+          # exactly how authorize broke: "missing OAuth client credentials".
+          if ! gmail-axi doctor --json | grep -q '"credentials":"ready"'; then
+            echo "No account resolves OAuth client credentials; the wrapper is not sourcing ~/.config/gmail-axi/credentials.env" >&2
+            exit 1
+          fi
           trap - EXIT
