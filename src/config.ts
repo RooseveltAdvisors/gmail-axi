@@ -166,7 +166,7 @@ export async function accountViews(
         key: account.key,
         email: account.email,
         auth: ready ? "ready" : "missing",
-        credentials: ready ? "ready" : "missing",
+        credentials: env[account.clientIdEnv] && env[account.clientSecretEnv] ? "ready" : "missing",
       } satisfies AccountView;
     }),
   );
