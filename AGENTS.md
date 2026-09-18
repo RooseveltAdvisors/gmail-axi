@@ -4,8 +4,10 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 - Add durable project-specific notes here as they are discovered through real work.
 
-## Deploy sharp edge
-- The generated `~/.local/bin/gmail-axi` wrapper (`.github/workflows/deploy.yml`) must source `~/.config/gmail-axi/credentials.env` before exec or `authorize` fails with "missing OAuth client credentials". The workflow verify step guards this via `gmail-axi doctor --json` requiring an account with `credentials: ready`; do not weaken that check or reuse `accounts` as the only verify.
+## Credentials
+- Credentials are resolved from vault references (`op://<vault>/<item>/<field>` in `accounts.toml`), with `*_env` variables as an override only. A `.env` file of exported secrets is never a source — see README "Credentials".
+- The generated `~/.local/bin/gmail-axi` wrapper (`.github/workflows/deploy.yml`) must only `exec` the CLI. The deploy verify step fails if the wrapper sources any file; do not reintroduce credential sourcing there.
+- `op` must be authenticated for the user that runs `gmail-axi` (for a service account, `OP_SERVICE_ACCOUNT_TOKEN` in that user's environment). When it is not, `doctor` reports `credentials: unavailable` rather than `missing` — that distinction is the first thing to check when auth breaks.
 
 ## Maintaining this file
 
