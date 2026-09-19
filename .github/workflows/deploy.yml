@@ -49,13 +49,16 @@ jobs:
           rm -rf "$install_root"
           mv "$staging" "$install_root"
           mkdir -p "$HOME/.local/bin"
-          # The launcher only execs the CLI. Credentials resolve from the vault
-          # references in accounts.toml at invocation; sourcing a credential file
-          # here is what this wrapper exists to never do again.
+          # The launcher never sources a credential file. It execs the CLI
+          # through the host's root-only vault helper, which resolves the vault
+          # items, drops back to the consumer user, and injects GMAIL_AXI_* into
+          # the child only -- no credential file, and no vault token reaches the
+          # CLI. On hosts without that helper the CLI resolves the op://
+          # references in accounts.toml itself.
           printf '%s\n' \
             '#!/usr/bin/env bash' \
             'set -euo pipefail' \
-            'exec "$HOME/.local/lib/gmail-axi/dist/cli.js" "$@"' > "$HOME/.local/bin/gmail-axi"
+            'exec sudo -n python3 "$HOME/.local/libexec/gmail-axi-vault-run.py" -- "$HOME/.local/lib/gmail-axi/dist/cli.js" "$@"' > "$HOME/.local/bin/gmail-axi"
           chmod +x "$HOME/.local/bin/gmail-axi"
       - name: Verify installed CLI
         shell: bash

@@ -94,11 +94,21 @@ reported. Sending remains disabled; use `draft` for outbound mail preparation.
 ## Deployment
 
 Merging to `main` deploys the built CLI to the GPU through the repository's
-GitHub Action, which also generates the `gmail-axi` launcher. The launcher only
-execs the CLI: it sources no credential file, and the deploy verifies that. The
-`op` CLI must be authenticated for the user that runs `gmail-axi` (for a service
-account, `OP_SERVICE_ACCOUNT_TOKEN` in that user's environment). Never rebuild
-the installed copy by hand on the GPU.
+GitHub Action, which also generates the `gmail-axi` launcher. The launcher
+sources no credential file, and the deploy verifies that.
+
+Two credential lanes are supported, and neither is a file of exported secrets:
+
+- **Privileged helper.** The launcher execs the CLI through a root-only helper
+  that resolves the vault items, drops back to the consumer user, and injects
+  the `*_env` variables into that child only. The vault token never reaches the
+  CLI, and the consumer needs no vault access of its own. This is the deployed
+  arrangement, so `accounts.toml` there declares `*_env` names.
+- **Direct resolution.** With no such helper, accounts declare `*_ref` vault
+  references and the CLI resolves them itself, which requires `op` to be
+  authenticated for the user that runs `gmail-axi`.
+
+Never rebuild the installed copy by hand on the GPU.
 
 ## AXI
 
