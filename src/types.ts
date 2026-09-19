@@ -1,17 +1,24 @@
 export type Account = {
   key: string;
   email: string;
-  clientIdEnv: string;
-  clientSecretEnv: string;
+  clientIdEnv?: string;
+  clientSecretEnv?: string;
   refreshTokenEnv?: string;
   accessTokenEnv?: string;
+  clientIdRef?: string;
+  clientSecretRef?: string;
+  refreshTokenRef?: string;
 };
+
+/** Where an account's OAuth client credentials are declared to come from. */
+export type CredentialSource = "vault" | "env" | "none";
 
 export type AccountView = {
   key: string;
   email: string;
   auth: "ready" | "missing";
-  credentials: "ready" | "missing";
+  credentials: "ready" | "missing" | "unavailable";
+  source: CredentialSource;
 };
 
 export type ConfigState = {

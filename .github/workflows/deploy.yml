@@ -49,15 +49,16 @@ jobs:
           rm -rf "$install_root"
           mv "$staging" "$install_root"
           mkdir -p "$HOME/.local/bin"
+          # The launcher never sources a credential file. It execs the CLI
+          # through the host's root-only vault helper, which resolves the vault
+          # items, drops back to the consumer user, and injects GMAIL_AXI_* into
+          # the child only -- no credential file, and no vault token reaches the
+          # CLI. On hosts without that helper the CLI resolves the op://
+          # references in accounts.toml itself.
           printf '%s\n' \
             '#!/usr/bin/env bash' \
             'set -euo pipefail' \
-            'CFG_ENV="${HOME}/.config/gmail-axi/credentials.env"' \
-            'if [[ -f "$CFG_ENV" ]]; then' \
-            '  # shellcheck disable=SC1090' \
-            '  source "$CFG_ENV"' \
-            'fi' \
-            'exec "$HOME/.local/lib/gmail-axi/dist/cli.js" "$@"' > "$HOME/.local/bin/gmail-axi"
+            'exec sudo -n python3 "$HOME/.local/libexec/gmail-axi-vault-run.py" -- "$HOME/.local/lib/gmail-axi/dist/cli.js" "$@"' > "$HOME/.local/bin/gmail-axi"
           chmod +x "$HOME/.local/bin/gmail-axi"
       - name: Verify installed CLI
         shell: bash
@@ -79,12 +80,16 @@ jobs:
           trap rollback EXIT
           "$HOME/.local/bin/gmail-axi" --help
           gmail-axi accounts
-          # accounts/doctor succeed without env, so also require doctor to resolve
-          # client credentials for at least one account (no tokens are minted).
-          # This catches a wrapper that fails to source credentials.env, which is
-          # exactly how authorize broke: "missing OAuth client credentials".
-          if ! gmail-axi doctor --json | grep -q '"credentials":"ready"'; then
-            echo "No account resolves OAuth client credentials; the wrapper is not sourcing ~/.config/gmail-axi/credentials.env" >&2
+          gmail-axi doctor --json > /dev/null
+          # The launcher must never reintroduce a credential file. Credentials
+          # come from the vault references in accounts.toml (or an explicit env
+          # override); a sourced .env is the regression this guards against.
+          if grep -Eq '(^|[^[:alnum:]_])(source|\.)[[:space:]]' "$HOME/.local/bin/gmail-axi"; then
+            echo "The installed launcher sources a file; credentials must resolve from the vault" >&2
+            exit 1
+          fi
+          if grep -q 'credentials.env' "$HOME/.local/bin/gmail-axi"; then
+            echo "The installed launcher still references credentials.env" >&2
             exit 1
           fi
           trap - EXIT

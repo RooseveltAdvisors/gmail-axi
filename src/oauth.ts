@@ -18,7 +18,7 @@ export async function authorizeAccount(
   env: NodeJS.ProcessEnv = process.env,
   fetcher: FetchLike = fetch,
 ): Promise<{ account: string; status: "authorized"; storage: "user-local" }> {
-  const material = clientCredentials(account, env);
+  const material = await clientCredentials(account, env);
   const state = randomBytes(16).toString("hex");
   const server = createServer();
   const code = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {

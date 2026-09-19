@@ -1,14 +1,27 @@
 # Copy to ~/.config/gmail-axi/accounts.toml and fill in.
 # Never commit a real accounts.toml.
+#
+# Credentials are named, never stored. Each `*_ref` is a vault reference of the
+# form op://<vault>/<item>/<field>, resolved through the `op` CLI at invocation.
+# gmail-axi never reads a file of exported secrets.
 
 [accounts.work]
 email = "you@example.com"
-client_id_env = "GMAIL_AXI_WORK_CLIENT_ID"
-client_secret_env = "GMAIL_AXI_WORK_CLIENT_SECRET"
-refresh_token_env = "GMAIL_AXI_WORK_REFRESH_TOKEN"
+client_id_ref = "op://Example Vault/Example Gmail OAuth/client_id"
+client_secret_ref = "op://Example Vault/Example Gmail OAuth/client_secret"
+# Optional. Omit to use the token cached by `gmail-axi authorize`.
+refresh_token_ref = "op://Example Vault/Example Gmail OAuth/refresh_token"
 
 [accounts.personal]
 email = "you2@example.com"
-client_id_env = "GMAIL_AXI_PERSONAL_CLIENT_ID"
-client_secret_env = "GMAIL_AXI_PERSONAL_CLIENT_SECRET"
-refresh_token_env = "GMAIL_AXI_PERSONAL_REFRESH_TOKEN"
+client_id_ref = "op://Example Vault/Example Personal Gmail OAuth/client_id"
+client_secret_ref = "op://Example Vault/Example Personal Gmail OAuth/client_secret"
+
+# Environment variables remain supported and take precedence over a reference,
+# so one command can be pinned to a specific value without editing this file.
+# Use them for CI and one-off overrides — not as a stored credential file.
+[accounts.ci]
+email = "you3@example.com"
+client_id_env = "GMAIL_AXI_CI_CLIENT_ID"
+client_secret_env = "GMAIL_AXI_CI_CLIENT_SECRET"
+refresh_token_env = "GMAIL_AXI_CI_REFRESH_TOKEN"

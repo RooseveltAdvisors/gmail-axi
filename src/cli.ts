@@ -7,6 +7,7 @@ import { GmailClient, GmailError } from "./gmail.js";
 import { MidError, parseMessageId } from "./mid.js";
 import { authorizeAccount } from "./oauth.js";
 import { toon } from "./toon.js";
+import { VaultError } from "./vault.js";
 import type { ConfigState, GmailOperations } from "./types.js";
 
 const DESCRIPTION = "Read and draft mail across local Gmail accounts; sending is disabled.";
@@ -212,7 +213,8 @@ async function home(deps: Dependencies, doctor = false): Promise<Record<string, 
       checks: [
         { name: "config", status: config.exists ? "ok" : "missing" },
         { name: "accounts", status: views.length ? "ok" : "missing" },
-        { name: "secrets", status: "local-only" },
+        { name: "credentials", status: credentialsCheck(views) },
+        { name: "secrets", status: "vault-or-env" },
       ],
       help: config.exists ? ["Run `gmail-axi accounts`", "Run `gmail-axi authorize --account <key>`"] : missingConfigHelp(),
     };
@@ -225,6 +227,13 @@ async function home(deps: Dependencies, doctor = false): Promise<Record<string, 
     accounts: views.map(({ key, email, auth }) => ({ key, email, auth })),
     help: config.exists && views.length ? ["Run `gmail-axi doctor`", "Run `gmail-axi search --account <key> --query \"newer_than:7d\"`"] : missingConfigHelp(),
   };
+}
+
+/** Vault breakage must not read as an unconfigured account. */
+function credentialsCheck(views: Awaited<ReturnType<typeof accountViews>>): string {
+  if (!views.length) return "missing";
+  if (views.some((view) => view.credentials === "unavailable")) return "unavailable";
+  return views.every((view) => view.credentials === "ready") ? "ok" : "missing";
 }
 
 function executablePath(path: string): string {
@@ -379,7 +388,9 @@ export async function run(argv: string[], overrides: Partial<Dependencies> = {})
         ? new CliError(error.code, error.message, 1, { help: error.help })
         : error instanceof GmailError
           ? new CliError(error.code, error.message, 1, { help: error.help })
-          : new CliError("internal_error", "Command failed");
+          : error instanceof VaultError
+            ? new CliError(error.code, error.message, 1, { help: error.help })
+            : new CliError("internal_error", "Command failed");
     deps.stderr(normalized.code === "internal_error" ? "[gmail-axi] command failed\n" : "");
     deps.stdout(output(errorOutput(normalized)));
     return normalized.exitCode;
